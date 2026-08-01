@@ -7,7 +7,7 @@ INCOMPLETE when a family-H path went unread.
 """
 import json, os, pathlib, subprocess, sys, tempfile, unittest
 
-GATE = pathlib.Path(__file__).resolve().parent.parent / "slop" / "gate.py"
+GATE = pathlib.Path(__file__).resolve().parent / "gate.py"
 
 
 def write_map(d, sha="abc123", contract="codemap-rows/1", fidelity="reachability",

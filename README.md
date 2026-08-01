@@ -54,3 +54,10 @@ One user, work in progress, not ready to share.
 - `report` — not built. The report is still assembled by hand, which is where two HTML defects
   shipped in a single sweep on 2026-08-01. It is a pure transform of plan + discharge + findings
   and should never have been model work; it is next after the `plan`/`verify` port.
+
+## Known temporary state
+
+`python/gate.py` is the source of truth for `plan`/`verify` until the port lands. The deployed
+`~/.claude/skills/slop-ferret/scripts/gate.py` is a **symlink** to it, not a copy — two copies of
+one rule with no gate holding them equal is a lexicon class (*duplicated implementation*), and
+shipping one inside the tool that hunts it would be absurd. A symlink cannot drift.
