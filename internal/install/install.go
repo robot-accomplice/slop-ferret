@@ -59,7 +59,7 @@ type manifest struct {
 	Files   map[string]string `json:"files"`
 }
 
-type paths struct{ home, dest, cmds, vault string }
+type paths struct{ home, dest, cmds string }
 
 func newPaths() (paths, error) {
 	h, err := os.UserHomeDir()
@@ -67,10 +67,9 @@ func newPaths() (paths, error) {
 		return paths{}, err
 	}
 	return paths{
-		home:  h,
-		dest:  filepath.Join(h, ".claude", "skills", "slop-ferret"),
-		cmds:  filepath.Join(h, ".claude", "commands"),
-		vault: filepath.Join(h, "Claude Vault", "wiki", "practices", "ai-slop-lexicon.md"),
+		home: h,
+		dest: filepath.Join(h, ".claude", "skills", "slop-ferret"),
+		cmds: filepath.Join(h, ".claude", "commands"),
 	}, nil
 }
 
@@ -258,16 +257,6 @@ func Install(w io.Writer, force bool) int {
 		}
 	}
 
-	// One lexicon, one file. The vault path is a VIEW of it so Obsidian can browse it and
-	// [[ai-slop-lexicon]] still resolves. Two real copies under one name is the drift that made
-	// every recorded lexicon version meaningless, and a symlink cannot drift.
-	if fi, err := os.Stat(filepath.Dir(p.vault)); err == nil && fi.IsDir() {
-		if err := relink(p.vault, filepath.Join(p.dest, "references", "ai-slop-lexicon.md")); err != nil {
-			fmt.Fprintf(w, "slop: linking vault lexicon: %v\n", err)
-			return 2
-		}
-	}
-
 	mb, _ := json.MarshalIndent(manifest{Version: Version(), Files: written}, "", " ")
 	if err := os.WriteFile(filepath.Join(p.dest, manifestName), mb, 0o644); err != nil {
 		fmt.Fprintf(w, "slop: %v\n", err)
@@ -343,17 +332,9 @@ func Doctor(w io.Writer) int {
 		}
 	}
 
-	if fi, err := os.Stat(filepath.Dir(p.vault)); err == nil && fi.IsDir() {
-		if li, err := os.Lstat(p.vault); err != nil || li.Mode()&os.ModeSymlink == 0 {
-			problems = append(problems, fmt.Sprintf(
-				"vault lexicon is not a symlink: %s — a second definition exists, so any "+
-					"recorded lexicon version is ambiguous", p.vault))
-		}
-	}
-
 	fmt.Fprintf(w, "slop doctor: embedded skill %s\n", Version())
 	if len(problems) == 0 {
-		fmt.Fprintf(w, "  ok — deployed copy matches, both commands resolve, one lexicon\n")
+		fmt.Fprintf(w, "  ok — deployed copy matches the binary, both commands resolve\n")
 		return 0
 	}
 	for _, s := range problems {

@@ -61,3 +61,48 @@ One user, work in progress, not ready to share.
 `~/.claude/skills/slop-ferret/scripts/gate.py` is a **symlink** to it, not a copy — two copies of
 one rule with no gate holding them equal is a lexicon class (*duplicated implementation*), and
 shipping one inside the tool that hunts it would be absurd. A symlink cannot drift.
+
+## Symbiosis: magma, architext, slop
+
+Three tools over **one** derived artifact. magma parses the repository once and emits a versioned
+call graph; the other two consume it rather than re-deriving it, and none of them re-parses what
+another already knows.
+
+```
+                 ┌───────────────────────────────┐
+   repository ──►│ magma  — parse once           │
+                 │  reachability (RTA), dead code│
+                 │  test-only code, call graph   │
+                 └──────┬─────────────────┬──────┘
+                        │                 │
+        codemap-rows/1  │                 │  magma-code-graph/1
+        (row files)     │                 │  (architecture emit)
+                        ▼                 ▼
+                   ┌─────────┐       ┌────────────┐
+                   │  slop   │       │ architext  │
+                   │ sweeps  │       │ architecture│
+                   │ for AI  │       │ docs, C4,   │
+                   │ slop    │       │ flows       │
+                   └─────────┘       └────────────┘
+```
+
+**The contracts are the seam, and they are not interchangeable.** `codemap-rows/1` (row files —
+the only one `slop` accepts), `codemap-graph/1` (`graph.json`), `magma-code-graph/1` (the architext
+emit). `slop plan` refuses a map whose `contract_version` it does not know, and refuses a map of a
+different tree by `sha` — a stale or reshaped map fails loud rather than silently seeding rows from
+the wrong commit.
+
+**What each is for.** magma answers *what reaches what*. architext turns that into architecture
+documentation a human reads. slop turns it into a reading order for an audit — which code is
+worth reading first, and what has not been looked at yet.
+
+**Where the division is going.** Ranking by consequence belongs in magma, not here: "does this file
+reach `os/exec`, `net/http`, `os.OpenFile`, `crypto/*`" is a graph query over imports, and magma
+already holds the graph and the types. `slop`'s current path-name signals are a guess at semantics
+from names the target's own authors chose, which is why they under-enumerate silently. Moving the
+ranking down to magma makes it a fact instead of a guess, and every magma consumer gets it.
+
+**No note-app dependency.** State lives in `~/.slop/` (`maps/`, `records/`). An earlier version
+symlinked the lexicon into an Obsidian vault so `[[wikilinks]]` resolved; that made the vault part
+of the tool's correctness, and two copies of one definition under one name is precisely the drift
+class this tool hunts. The dependency is removed rather than symlinked around.

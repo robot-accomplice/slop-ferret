@@ -73,34 +73,28 @@ on, unreachable from its own entry point. If you are not running a control, skip
 class: what decides membership, the discriminator against its nearest neighbour, a detection method, and
 **the severity**. Record its version in your report.
 
-**There is ONE lexicon file.** `references/ai-slop-lexicon.md` in this skill directory is it.
-`~/Claude Vault/wiki/practices/ai-slop-lexicon.md` is a **symlink** to that file, so Obsidian can browse
-it and `[[ai-slop-lexicon]]` keeps resolving. Write to either path; they are the same bytes.
+**There is ONE lexicon file**, and it is the one in this skill directory. `slop install` writes it
+there from the binary, so there is no second copy to reconcile and no vault, note-app or symlink in
+the path. This used to be mirrored by hand into an Obsidian vault, and the hand-mirroring is exactly
+what broke: on 2026-08-01 the two copies had drifted while both still declared version
+`2026-07-26.1`, because a version string cannot detect an edit that did not bump it. Two copies under
+one name make every recorded version meaningless. The dependency is gone rather than symlinked
+around — `slop doctor` reports drift between the installed copy and the binary that wrote it, which
+is the check the mirroring ritual was reaching for and never achieved.
 
-This used to be two real files kept in step by hand, and the hand-mirroring is exactly what broke: on
-2026-08-01 they had drifted while both still declared version `2026-07-26.1`, because a version string
-cannot detect an edit that did not bump it. Two copies under one name make every recorded version
-meaningless, and the reconciliation ritual that was supposed to catch it only ever ran at sweep time,
-which is far too late to be a control. A symlink cannot drift.
+**Stop condition:** the in-skill file is missing. Do not improvise a vocabulary and do not emit a
+verdict block — a sweep without its class definitions produces a report indistinguishable from a real
+one, and is not one. Run `slop doctor`; a missing file is exactly what it reports.
 
-**Two stop conditions, both cheap to check:**
-- **The vault path is a regular file rather than a symlink** — someone replaced the link, so a second
-  definition exists again. Diff it against the in-skill file, reconcile deliberately, restore the
-  symlink, and tell the operator what differed.
-- **The in-skill file is missing.** Do not improvise a vocabulary and do not emit a verdict block — a
-  sweep without its class definitions produces a report indistinguishable from a real one, and is not
-  one.
+**1b. Record THIS SKILL's own identity.** Run `slop doctor` and put the version it prints in the
+report beside the lexicon version. **A non-zero exit is a stop condition:** either the deployed copy
+drifted from the binary that installed it, or the install is incomplete — in both cases the version
+you would record is not the version you are running. `doctor` names the file and the direction, so
+fix it or say on the face of the report that the sweep ran against a drifted skill.
 
-**1b. Record THIS SKILL's own identity.** Run `scripts/skill_version.py check` and put the
-`<version>+<digest>` it prints in the report beside the lexicon version. **A non-zero exit is a
-stop condition:** the skill was edited without stamping, so its recorded version is not true and
-any sweep citing it is citing a fiction. Stamp it (`skill_version.py stamp <version>`) or say on
-the face of the report that the sweep ran against an unstamped skill.
-
-This exists because this skill mandates "pin a commit SHA, never a branch" and lives outside
-git. A typed version alone would not do: on 2026-08-01 both copies of the lexicon declared
-`2026-07-26.1` while their contents had diverged, which is the same failure. The digest is what
-makes the version falsifiable, and it is the only property of a git sha this skill needs.
+This replaces a digest-stamping script. That script existed because the skill lived outside version
+control, so hashing the deployed tree was the only way to notice an edit; it could say *something
+changed* and never *what*. The repo is the version control now.
 
 **2. Read the target's prior sweep record** if one exists, for its counts and — more useful — the
 classes recorded CLEAN *with the method used*. Do not re-spend budget there unless the method has since
@@ -172,10 +166,10 @@ seam is a script contract, not a narrated one:
 
 ```bash
 SHA=$(git -C <repo> rev-parse --short HEAD)                      # CLEAN tree, always
-magma --depth 1 <repo> <name> ~/Claude\ Vault/codemap            # rows land in <name>/.magma/
-gate.py plan  ~/Claude\ Vault/codemap/<name> "$SHA" <repo>  > plan.json
+magma --depth 1 <repo> <name> ~/.slop/maps                        # rows land in <name>/.magma/
+slop plan ~/.slop/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
 # ... do the sweep: read every plan.h_required path; account for EVERY candidate ...
-gate.py verify plan.json discharge.json   # two fractions + a work queue; 0 settled · 3 items open
+slop verify plan.json discharge.json   # two fractions + a work queue; 0 settled · 3 items open
 ```
 
 **The generator is `magma` (`~/go/bin/magma`), and four of its properties bite.** Confirmed with
@@ -203,7 +197,7 @@ refactor order for code that should be left alone. The gate reports these in
 `plan.unseeded_families` and they must appear as NOT RUN in the verdict block. They may never be
 reported as checked-clean.
 
-`gate.py` (`scripts/gate.py`, with its own suite in `tests/`) **refuses** unless the map is the right tree
+`slop plan` (in the `slop` binary, with its own suite) **refuses** unless the map is the right tree
 (`sha`) and a shape it parses (`contract_version`) — so a stale or reshaped map fails loud, not
 silently. It turns map rows into per-family **candidates carrying each class's pre-filing bar** (and a
 heavier bar when the map's `fidelity` is weaker than a real call graph), and it enumerates the
@@ -453,7 +447,7 @@ enumeration that fails the build on an unclassified sibling, a derived number in
 
 ```
 SLOP SWEEP — <repo> @ <sha>
-Skill:         <version>+<digest>     (skill_version.py check)
+Skill:         <version>                (slop doctor)
 Lexicon:       <version>              Families ref: read | NOT READ
 Tier:          1 | 1-2 | 1-3
 Scope:         N files (M non-test source; excluded: <vendored/generated>)
@@ -463,7 +457,7 @@ Findings:      <n> VERIFIED  (<b> blocking · <f> fix-or-file · <n> note)
 Rate:          <severity-weighted, VERIFIED only> per 1,000 non-test source  [denominator: M]
 Checked-clean: <class — method used>
 Near-misses:   <candidate — what refuted it>
-H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (gate.py verify)
+H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (slop verify)
 Blind spots:   <n> changed files no H signal reached (<w> waived)  [baseline: <ref> | n/a]
 Coverage:      repo <r>/<R> source files read (<p>%) · plan <d>/<D> dispositioned
                <w> waived (counted as unread) · <u> unclassified
@@ -542,8 +536,9 @@ refutation was sought.
 
 ## Step 7 — write back
 
-New or amended classes → **the lexicon** (`references/ai-slop-lexicon.md`), with all three fields and
-provenance, `status: draft` if new. There is nothing to mirror: the vault path is a symlink to that file.
+New or amended classes → **the lexicon** in the `slop` repo (`skill/references/ai-slop-lexicon.md`),
+with all three fields and provenance, `status: draft` if new. Edit it in the repo and reinstall —
+editing the deployed copy is the mistake `slop doctor` exists to catch, and it will tell you so.
 Counts, denominator, SHA, tier, lexicon version, checked-clean results, near-misses **and where the
 report file lives** → the target's sweep record. Never counts in the lexicon; never universal classes on
 a repo page.

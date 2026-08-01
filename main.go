@@ -17,9 +17,11 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/robot-accomplice/slop/internal/gate"
 	"github.com/robot-accomplice/slop/internal/install"
 )
 
@@ -28,16 +30,14 @@ var skillFS embed.FS
 
 const usage = `slop — companion tool for the slop-ferret sweep
 
-  slop install [--force]   deploy the embedded skill into ~/.claude (both command entries)
-  slop doctor              report drift between the embedded skill and the deployed copy
-  slop version             the embedded skill version
+  slop plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
+  slop verify <plan.json> <discharge.json>            ; 0 settled, 3 items open
+  slop install [--force]                              deploy the embedded skill into ~/.claude
+  slop doctor                                         drift, in both directions
+  slop version                                        the embedded skill version
 
-  plan/verify are not ported yet — see python/gate.py. Deferred deliberately: their behaviour is
-  pinned by 44 tests whose measurements (ANCHOR anchoring, tier split, defer floor) were each
-  derived from a real repo, and porting them in the same pass as this restructure would leave
-  neither half checkable. install/doctor went first because they are the part that must be a
-  binary: they run before any toolchain exists, and a half-finished install is what let a
-  pre-registered control run holding the two tools the skill withholds.`
+Pairs with magma (github.com/robot-accomplice/magma), which builds the call map slop plans from.
+Run magma first; slop refuses a map of a different tree by construction.`
 
 func main() {
 	install.SkillFS = skillFS
@@ -46,6 +46,10 @@ func main() {
 		os.Exit(2)
 	}
 	switch os.Args[1] {
+	case "plan":
+		os.Exit(cmdPlan(os.Args[2:]))
+	case "verify":
+		os.Exit(cmdVerify(os.Args[2:]))
 	case "install":
 		os.Exit(install.Install(os.Stdout, len(os.Args) > 2 && os.Args[2] == "--force"))
 	case "doctor":
@@ -56,4 +60,53 @@ func main() {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
+}
+
+func fail(err error) int {
+	code := 2
+	if e, ok := err.(*gate.Err); ok {
+		code = e.Code
+	}
+	fmt.Fprintf(os.Stderr, "slop: %v\n", err)
+	return code
+}
+
+func cmdPlan(args []string) int {
+	since := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--since" {
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "slop: --since needs a git ref")
+				return 2
+			}
+			since = args[i+1]
+			args = append(args[:i], args[i+2:]...)
+			break
+		}
+	}
+	if len(args) != 3 {
+		fmt.Fprintln(os.Stderr, usage)
+		return 2
+	}
+	p, err := gate.BuildPlan(args[0], args[1], args[2], since)
+	if err != nil {
+		return fail(err)
+	}
+	b, _ := json.MarshalIndent(p, "", " ")
+	fmt.Println(string(b))
+	return 0
+}
+
+func cmdVerify(args []string) int {
+	if len(args) != 2 {
+		fmt.Fprintln(os.Stderr, usage)
+		return 2
+	}
+	res, code, err := gate.Verify(args[0], args[1])
+	if err != nil {
+		return fail(err)
+	}
+	b, _ := json.MarshalIndent(res, "", " ")
+	fmt.Println(string(b))
+	return code
 }
