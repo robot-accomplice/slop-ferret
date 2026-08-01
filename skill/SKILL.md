@@ -73,20 +73,20 @@ on, unreachable from its own entry point. If you are not running a control, skip
 class: what decides membership, the discriminator against its nearest neighbour, a detection method, and
 **the severity**. Record its version in your report.
 
-**There is ONE lexicon file**, and it is the one in this skill directory. `slop-ferret install` writes it
+**There is ONE lexicon file**, and it is the one in this skill directory. `ferret install` writes it
 there from the binary, so there is no second copy to reconcile and no vault, note-app or symlink in
 the path. This used to be mirrored by hand into an Obsidian vault, and the hand-mirroring is exactly
 what broke: on 2026-08-01 the two copies had drifted while both still declared version
 `2026-07-26.1`, because a version string cannot detect an edit that did not bump it. Two copies under
 one name make every recorded version meaningless. The dependency is gone rather than symlinked
-around — `slop-ferret doctor` reports drift between the installed copy and the binary that wrote it, which
+around — `ferret doctor` reports drift between the installed copy and the binary that wrote it, which
 is the check the mirroring ritual was reaching for and never achieved.
 
 **Stop condition:** the in-skill file is missing. Do not improvise a vocabulary and do not emit a
 verdict block — a sweep without its class definitions produces a report indistinguishable from a real
-one, and is not one. Run `slop-ferret doctor`; a missing file is exactly what it reports.
+one, and is not one. Run `ferret doctor`; a missing file is exactly what it reports.
 
-**1b. Record THIS SKILL's own identity.** Run `slop-ferret doctor` and put the version it prints in the
+**1b. Record THIS SKILL's own identity.** Run `ferret doctor` and put the version it prints in the
 report beside the lexicon version. **A non-zero exit is a stop condition:** either the deployed copy
 drifted from the binary that installed it, or the install is incomplete — in both cases the version
 you would record is not the version you are running. `doctor` names the file and the direction, so
@@ -166,10 +166,11 @@ seam is a script contract, not a narrated one:
 
 ```bash
 SHA=$(git -C <repo> rev-parse --short HEAD)                      # CLEAN tree, always
-magma --depth 1 <repo> <name> ~/.slop-ferret/maps                        # rows land in <name>/.magma/
-slop-ferret plan ~/.slop-ferret/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
+magma --depth 1 <repo> <name> ~/.slop-ferret/maps                # rows land in <name>/.magma/
+ferret plan ~/.slop-ferret/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
 # ... do the sweep: read every plan.h_required path; account for EVERY candidate ...
-slop-ferret verify plan.json discharge.json   # two fractions + a work queue; 0 settled · 3 items open
+ferret verify plan.json discharge.json <repo>   # two fractions + a work queue
+                                               # 0 settled · 3 items open · 4 refused
 ```
 
 **The generator is `magma` (`~/go/bin/magma`), and four of its properties bite.** Confirmed with
@@ -197,7 +198,7 @@ refactor order for code that should be left alone. The gate reports these in
 `plan.unseeded_families` and they must appear as NOT RUN in the verdict block. They may never be
 reported as checked-clean.
 
-`slop-ferret plan` (in the `slop-ferret` binary, with its own suite) **refuses** unless the map is the right tree
+`ferret plan` (in the `ferret` binary, with its own suite) **refuses** unless the map is the right tree
 (`sha`) and a shape it parses (`contract_version`) — so a stale or reshaped map fails loud, not
 silently. It turns map rows into per-family **candidates carrying each class's pre-filing bar** (and a
 heavier bar when the map's `fidelity` is weaker than a real call graph), and it enumerates the
@@ -447,7 +448,7 @@ enumeration that fails the build on an unclassified sibling, a derived number in
 
 ```
 SLOP SWEEP — <repo> @ <sha>
-Skill:         <version>                (slop-ferret doctor)
+Skill:         <version>                (ferret doctor)
 Lexicon:       <version>              Families ref: read | NOT READ
 Tier:          1 | 1-2 | 1-3
 Scope:         N files (M non-test source; excluded: <vendored/generated>)
@@ -457,7 +458,7 @@ Findings:      <n> VERIFIED  (<b> blocking · <f> fix-or-file · <n> note)
 Rate:          <severity-weighted, VERIFIED only> per 1,000 non-test source  [denominator: M]
 Checked-clean: <class — method used>
 Near-misses:   <candidate — what refuted it>
-H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (slop-ferret verify)
+H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (ferret verify)
 Blind spots:   <n> changed files no H signal reached (<w> waived)  [baseline: <ref> | n/a]
 Coverage:      repo <r>/<R> source files read (<p>%) · plan <d>/<D> dispositioned
                <w> waived (counted as unread) · <u> unclassified
@@ -538,7 +539,7 @@ refutation was sought.
 
 New or amended classes → **the lexicon** in the `slop-ferret` repo (`skill/references/ai-slop-lexicon.md`),
 with all three fields and provenance, `status: draft` if new. Edit it in the repo and reinstall —
-editing the deployed copy is the mistake `slop-ferret doctor` exists to catch, and it will tell you so.
+editing the deployed copy is the mistake `ferret doctor` exists to catch, and it will tell you so.
 Counts, denominator, SHA, tier, lexicon version, checked-clean results, near-misses **and where the
 report file lives** → the target's sweep record. Never counts in the lexicon; never universal classes on
 a repo page.
