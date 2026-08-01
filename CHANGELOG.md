@@ -21,7 +21,7 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
   "the binary moved on" from "you edited the deployed copy".
 - `update` — pull skill assets from the repository at a ref, resolved to a commit, staged to a temp
   dir so a failed fetch cannot half-apply.
-- CI (build, vet, race tests, 80% coverage gate, golangci-lint, embedded-skill completeness) and a
+- CI (build, vet, race tests, 80% coverage gate, golangci-lint, skill-tree deployment) and a
   tag-driven release workflow that verifies the tag against the binary version and the skill stamp.
 - Architecture docs (C4 context, C4 component, dataflow), CONTRIBUTING, SECURITY.
 
