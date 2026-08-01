@@ -13,9 +13,9 @@ condition can never be true.
 
 The name is the hunter, not the quarry.
 
-> **Status — not usable yet.** There is no tagged release, and the current
-> [ABORT record](docs/releases/) is a NO-GO. The sections below describe the intended shape; the
-> abort record says exactly which of it is not yet true.
+> **Status — not released, and not yet cleared for use.** There is no tagged release and the
+> go/no-go gate has not been run. The sections below describe the tool as built; nothing here has
+> been through a ship review, so treat it as unproven rather than ready.
 
 ## Why
 

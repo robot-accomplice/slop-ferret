@@ -7,8 +7,8 @@ rather than a public issue. Include what you did, what happened, and what you ex
 
 ## Supported versions
 
-Only the most recent tagged release. There is currently **no tagged release** — see the
-[ABORT record](docs/releases/) — so nothing is supported yet.
+Only the most recent tagged release. There is currently **no tagged release**, so nothing is
+supported yet.
 
 ## What this tool touches
 
@@ -35,8 +35,7 @@ them before running a downloaded binary.
 
 ## Known gaps
 
-Recorded rather than implied — see the [ABORT record](docs/releases/) for the full list and their
-blocking status.
+Recorded rather than implied.
 
 - Skill assets fetched by `update` are **not signature-verified**. Integrity rests on HTTPS and on
   GitHub's control of the repository; a compromised repo or a forged TLS chain would serve prose

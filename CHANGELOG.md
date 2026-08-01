@@ -6,7 +6,7 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
 
 ## [Unreleased]
 
-**Nothing is released. The current [ABORT record](docs/releases/) is a NO-GO.**
+**Nothing is released, and no go/no-go review has been run.**
 
 ### Added
 - `plan` / `verify` — the coded seam between a magma code map and a sweep. Reports two coverage
