@@ -66,9 +66,9 @@ ferret verify plan.json discharge.json             # 0 settled · 3 items open
 |---|---|
 | `plan` | reads the magma map, raises candidates with their pre-filing bars, enumerates the family-H worklist **and its complement** |
 | `verify` | reports two coverage fractions and a work queue |
-| `update` | pulls the skill from this repo at a ref |
-| `install` | deploys a skill tree (embedded, or `--from <dir>`) |
-| `doctor` | drift between the deployed skill and this binary, in both directions |
+| `install` / `update` | synonyms — acquire the skill and deploy it |
+| `doctor` | drift between the deployed skill and its source, in both directions |
+| `records` | prior sweeps of a repository, newest first |
 
 ### Two fractions, no verdict word
 
@@ -82,9 +82,16 @@ They are different numbers and **the gap between them is the point**. A
 quantities: a real sweep scored 10/10 on the plan and 17/25 on the repo and reported COMPLETE,
 having never enumerated the highest-consequence file in the tree.
 
-The exit code carries bookkeeping only — 0 when nothing raised is still undispositioned, 3 when
-something is — the way a test runner reports outstanding failures. It says nothing about whether
-the repository was covered, because that is a fraction and a fraction does not fit in a byte.
+| exit | means |
+|---|---|
+| 0 | nothing raised is undispositioned |
+| 2 | misuse — wrong arity, unreadable file |
+| 3 | items still open — read the work queue |
+| 4 | a refusal — wrong tree, unknown contract, missing map. **Nothing was measured.** |
+
+`3` and `4` are separate because a script must be able to tell an unfinished sweep from a map of
+the wrong tree; those want opposite responses. None of them says whether the repository was
+covered, because that is a fraction and a fraction does not fit in a byte.
 
 ### Waivers
 
@@ -99,15 +106,41 @@ to waive to clear it.
 **The skill is not welded to the binary.** SKILL.md and the lexicon are prose; they change far more
 often than the code, and usually for reasons the code does not care about.
 
-| source | command | when |
-|---|---|---|
-| **embedded** | `ferret install` | bootstrap floor — offline, what a fresh install has before it has talked to anything |
-| **repo** | `ferret update [--ref v0.1.0]` | the live `skill/` tree, pinned to the commit the ref resolved to |
-| **dir** | `ferret install --from .` | the edit-build-install loop |
+**No prose is compiled into the binary.** That makes the two cadences structural rather than
+conventional: a binary that cannot carry prose cannot quietly re-couple them, and what gets
+deployed stays reviewable as files.
 
-`version` and `doctor` print the binary version and the skill version **separately**, with the
-provenance of the deployed copy. An update stages to a temp dir first: a half-applied update is
-worse than a stale one, and a failed fetch leaves the deployment untouched.
+| source | command | who uses it |
+|---|---|---|
+| **repo @ this binary's version** | `ferret install` | the normal case: a downloaded binary, no checkout |
+| **repo @ a ref** | `ferret install --ref main` | tracking a branch, or an older skill against a newer binary |
+| **a checkout** | `ferret install --from .` | development |
+
+The default is **self-pinning**: a `0.3.0` binary installs the `v0.3.0` skill — the prose that
+version was tested with — without the user needing to know a ref exists. Before the first tag it
+says so and names the alternatives rather than falling back to `HEAD`.
+
+Releases also publish `slop-ferret-skill_<tag>.tar.gz` checksummed alongside the binaries: a
+supported acquisition path, not a required one.
+
+`doctor` reports the binary version and the deployed skill's version **separately**, with the
+provenance of the deployed copy, and works with no source reachable. An install stages to a temp
+dir first: a half-applied update is worse than a stale one.
+
+## Sweep records
+
+```bash
+ferret verify plan.json discharge.json ~/code/target   # writes a record
+ferret records ~/code/target                           # prior sweeps, newest first
+```
+
+Records live in `~/.slop-ferret/records/<repo>/<sha>.json`, never inside the repository being
+swept. They carry a **computed** half the tool derives and an **attested** half the discharge
+supplies — including classes checked clean *with the method used*, because "clean" with no method
+is not checkable, and an unchecked clean is how a later sweep skips ground nobody covered.
+
+Writing refuses a sha that does not resolve: a boundary nobody can re-derive leaves the next sweep
+unable to scope itself.
 
 ## Symbiosis: magma, architext, slop-ferret
 
@@ -156,7 +189,7 @@ Requires Go 1.26 and [`just`](https://github.com/casey/just); `golangci-lint` fo
 ### Correctness
 
 - **Coverage is gated at 80%** in CI and in `just cover`.
-- **The embedded skill's completeness is a build gate.** A deployed skill missing its lexicon
+- **Deploying the checkout's skill tree is a build gate.** A deployed skill missing its lexicon
   produces a sweep with no vocabulary — indistinguishable from a real one, and not one.
 - **The release gate parses `--version` positionally**, so both field offsets are pinned by a test.
   Reword that line and the tag check silently starts comparing the wrong token, which is how a
@@ -168,8 +201,9 @@ Requires Go 1.26 and [`just`](https://github.com/casey/just); `golangci-lint` fo
 ## Releasing
 
 Tags exist so that users who want to pin can. Pushing a semver tag re-runs the CI gates, verifies
-the tag matches the binary version **and** stamps the embedded skill, cross-compiles every target,
-and publishes a GitHub Release with checksummed archives.
+the tag matches the binary version, checks the skill stamp is date-style and was bumped if `skill/`
+changed, cross-compiles every target, and publishes a GitHub Release with checksummed archives —
+including the skill tree as its own artifact.
 
 ### Release checklist
 

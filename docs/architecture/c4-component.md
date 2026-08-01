@@ -9,18 +9,18 @@ graph TB
 
         subgraph gate["internal/gate"]
             plan["BuildPlan<br/><i>map + repo -> plan.json</i>"]
+            rec["Record<br/><i>computed + attested</i>"]
             verify["Verify<br/><i>plan + discharge -> two fractions</i>"]
             sig["signals + tiers<br/><i>measured constants</i>"]
             prod["ProductionFiles<br/><i>the coverage denominator</i>"]
         end
 
         subgraph inst["internal/install"]
-            src["Source<br/><i>embedded | repo | dir</i>"]
+            src["Source<br/><i>repo @ver | ref | dir</i>"]
             fetch["Fetch<br/><i>resolve ref -> tarball -> tmp</i>"]
             deploy["Install / Doctor<br/><i>deploy, classify drift</i>"]
         end
 
-        embed["//go:embed skill/<br/><i>bootstrap floor</i>"]
     end
 
     cli --> plan
@@ -30,8 +30,8 @@ graph TB
     plan --> sig
     plan --> prod
     verify --> prod
-    embed --> src
     fetch --> src
+    dir["--from &lt;checkout&gt;"] --> src
     src --> deploy
 ```
 
@@ -51,8 +51,9 @@ binary have different release cadences: prose changes far more often than code. 
 distinguishes *"the binary moved on"* from *"you edited the deployed copy"*, which the retired
 digest-stamping scheme could never do.
 
-**The embed is a floor, not the only source.** It guarantees a fresh install has a working skill
-before it has talked to anything; `update` is what keeps it current.
+**No prose is compiled in.** The binary acquires the skill — from the repository at its own
+version by default, a ref, or a checkout. That makes the two cadences structural: a binary that
+cannot carry prose cannot re-couple them by accident.
 
 ## The seam that is deliberately not here
 
