@@ -66,7 +66,7 @@ was found by hand and became the sweep's worst finding.
 
 ```mermaid
 graph LR
-    embed["embedded skill<br/>(compiled in)"] --> classify
+    repoat["repo @ v&lt;binVersion&gt;<br/>(the default)"] --> stage
     tarball["repo tarball<br/>@ resolved commit"] --> stage["temp dir"] --> classify
     dir["local checkout"] --> classify
 

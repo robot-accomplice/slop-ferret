@@ -11,13 +11,13 @@ _default:
 build:
     go build ./...
 
-# Install the slop-ferret binary into $GOBIN (~/go/bin by default)
+# Install the ferret binary into $GOBIN (~/go/bin by default)
 install:
-    go install .
+    go install ./cmd/ferret
 
 # Run from source, e.g. `just run doctor`
 run *ARGS:
-    go run . {{ ARGS }}
+    go run ./cmd/ferret {{ ARGS }}
 
 # Format the tree in place
 fmt:
@@ -61,7 +61,7 @@ cover-html: cover
 
 # Verify the deployed skill matches this checkout (catches editing the wrong copy)
 doctor:
-    go run . doctor
+    go run ./cmd/ferret doctor
 
 # Full local CI validation — same gates as GitHub Actions
 ci: fmt-check vet lint build cover
@@ -78,10 +78,10 @@ release-dry version="v0.0.0-dev":
     rm -rf dist && mkdir -p dist
     for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
         os="${t%/*}"; arch="${t#*/}"
-        bin="slop-ferret"; [ "$os" = "windows" ] && bin="slop-ferret.exe"
+        bin="ferret"; [ "$os" = "windows" ] && bin="ferret.exe"
         echo "==> ${os}/${arch}"
-        CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/${bin}" .
-        base="slop-ferret_{{ version }}_${os}_${arch}"
+        CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/${bin}" ./cmd/ferret
+        base="ferret_{{ version }}_${os}_${arch}"
         if [ "$os" = "windows" ]; then (cd dist && zip -q "${base}.zip" "$bin" && rm "$bin")
         else (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin"); fi
     done

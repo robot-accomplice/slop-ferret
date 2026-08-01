@@ -254,21 +254,21 @@ What already satisfies this spec, and what does not.
 | `plan` / `verify`, two fractions, complement enumeration | **built** |
 | `Source` abstraction, `Doctor` drift, refuse-to-clobber, both command entries | **built** |
 | CI, release workflow, lint, docs, 82% coverage | **built** |
-| D2 — binary named `ferret` at `cmd/ferret/` | **not built** — currently `slop-ferret` from repo root |
-| D3 — no embedded prose | **not built** — `//go:embed all:skill` still present |
-| D4 — `install`/`update` synonyms | **not built** — separate subcommands |
-| D8 — hard error with no source | **not built** — currently falls back to embedded |
-| D7 — records store | **not built** |
-| `--version` reporting a skill version | **to remove** — the binary will not have one |
-| `release.yml` reading the skill stamp from `--version` | **to change** — must read `skill/VERSION` from the checkout |
-| CI "embedded skill is complete" job | **to change** — becomes `install --from .` |
+| D2 — binary named `ferret` at `cmd/ferret/` | **built** |
+| D3 — no embedded prose | **built** |
+| D4 — `install`/`update` synonyms | **built** |
+| D8 — repo is the default source | **built** |
+| D7 — records store | **built** |
+| `--version` reporting a skill version | **removed** |
+| `release.yml` skill stamp source | **changed** — reads `skill/VERSION` |
+| CI skill job | **changed** — deploys from the checkout |
 
 ---
 
 ## 11. Open
 
 - **Nothing blocking.** All nine decisions are settled with the operator.
-- **Exit-code split (§7)** — proposed, not yet agreed. Found by this spec's own self-review, which
-  is the first thing in this project that a design document caught before the code shipped.
+- The exit-code split (§7) was found by this spec's own self-review — the first thing in this
+  project a design document caught before the code shipped. Now implemented.
 - The go/no-go ship review has not been run. Nothing here should be read as a statement that the
   tool is ready; §3 is explicit that it is not.

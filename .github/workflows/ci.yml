@@ -60,11 +60,11 @@ jobs:
         with:
           version: v2.12.2
 
-  # The skill is prose, and prose is what this tool audits other repos for. A deployed skill that
-  # is missing its lexicon produces a sweep with no vocabulary — indistinguishable from a real one,
-  # and not one. The embedded tree is the bootstrap floor, so its completeness is a build gate.
+  # The skill is prose, and prose is what this tool audits other repos for. A deployed skill that is
+  # missing its lexicon produces a sweep with no vocabulary — indistinguishable from a real one, and
+  # not one. The binary no longer carries a copy, so the gate is that the CHECKOUT deploys cleanly.
   skill:
-    name: embedded skill is complete
+    name: skill tree deploys cleanly
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -72,8 +72,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: install into a scratch HOME and doctor it
+      - name: install from the checkout and doctor it
         run: |
           export HOME="$(mktemp -d)"
-          go run . install
-          go run . doctor
+          go run ./cmd/ferret install --from .
+          go run ./cmd/ferret doctor --from .

@@ -9,6 +9,9 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
 **Nothing is released, and no go/no-go review has been run.**
 
 ### Added
+- **Sweep records** — `ferret verify … <repo>` writes `~/.slop-ferret/records/<repo>/<sha>.json`;
+  `ferret records <repo>` reads them back. Carries checked-clean *with the method used*, and
+  refuses a sha that does not resolve.
 - `plan` / `verify` — the coded seam between a magma code map and a sweep. Reports two coverage
   fractions (`coverage.repo`, `coverage.plan`) and a work queue.
 - `h_unmatched` — the complement of the signal-matched worklist. Every production file is raised;
@@ -18,11 +21,17 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
   "the binary moved on" from "you edited the deployed copy".
 - `update` — pull skill assets from the repository at a ref, resolved to a commit, staged to a temp
   dir so a failed fetch cannot half-apply.
-- CI (build, vet, race tests, 80% coverage gate, golangci-lint, embedded-skill completeness) and a
+- CI (build, vet, race tests, 80% coverage gate, golangci-lint, skill-tree deployment) and a
   tag-driven release workflow that verifies the tag against the binary version and the skill stamp.
 - Architecture docs (C4 context, C4 component, dataflow), CONTRIBUTING, SECURITY.
 
 ### Changed
+- **The binary is `ferret`** (project stays `slop-ferret`), built from `cmd/ferret`.
+- **`install` and `update` are synonyms.**
+- **No skill or lexicon prose is compiled into the binary.** `install` acquires it from the
+  repository at the tag matching the binary's own version, a `--ref`, or a `--from` checkout.
+- **Exit code `4` introduced for refusals**, separating "the tool declined to run" from "the sweep
+  is not finished" — they had shared `3`, so a script could not tell them apart.
 - **Renamed from `slop` to `slop-ferret`.** The old name named the quarry; a tool called "slop"
   reads as a slop generator.
 - **Removed the `COMPLETE / PARTIAL / INCOMPLETE` verdict.** One token cannot carry two
