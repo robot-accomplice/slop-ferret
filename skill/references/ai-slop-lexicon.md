@@ -224,4 +224,4 @@ much as it needs a read-it half.
 
 ## Related
 [[pre-release-slop-audit]] · [[dead-code-that-proves-itself-alive]] ·
-[[enumerate-the-class-not-the-site]] · [[a-green-mutation-proves-nothing]] · [[projects/personal/roboticus/slop-sweep-2026-07|roboticus sweep]] · [[projects/work/outrider/sente/slop-sweep-2026-07|sente sweep]] · [[projects/work/outrider/safe/slop-sweep-2026-07|safe sweep]]
+[[enumerate-the-class-not-the-site]] · [[a-green-mutation-proves-nothing]] · [[projects/personal/roboticus/slop-sweep-2026-07|roboticus sweep]]
