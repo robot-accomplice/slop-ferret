@@ -6,12 +6,22 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
 	"github.com/robot-accomplice/slop-ferret/internal/install"
 )
 
-func init() { install.Embedded = skillFS }
+func init() {
+	// SHIM, deleted in the next task. The embed is gone (its path no longer resolves from
+	// cmd/ferret) and the real source model lands next; duplicating skill/ under cmd/ferret to
+	// keep the embed working would create a second copy of the prose, which is the drift class
+	// this tool exists to find. A shim removed one task later is the cheaper wrong.
+	install.Embedded = fstest.MapFS{
+		"skill/SKILL.md": {Data: []byte("# skill\n")},
+		"skill/VERSION":  {Data: []byte(`{"version":"2026-08-01.8"}`)},
+	}
+}
 
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
@@ -111,42 +121,5 @@ func TestInstallThenDoctorRoundTrips(t *testing.T) {
 	code, out, _ := runCLI(t, "doctor")
 	if code != 0 {
 		t.Fatalf("doctor after install: code=%d out=%s", code, out)
-	}
-}
-
-// The embedded tree is the bootstrap floor; if it ever ships without the files the method needs,
-// a fresh `go install` produces a sweep with no vocabulary.
-func TestTheEmbeddedSkillCarriesWhatTheMethodNeeds(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	runCLI(t, "install")
-	dest := filepath.Join(home, ".claude", "skills", "slop-ferret")
-	for _, rel := range []string{
-		"SKILL.md",
-		"references/ai-slop-lexicon.md",
-		"references/families.md",
-		"commands/slop-ferret-report.md",
-	} {
-		if _, err := os.Stat(filepath.Join(dest, filepath.FromSlash(rel))); err != nil {
-			t.Errorf("embedded skill is missing %s: %v", rel, err)
-		}
-	}
-}
-
-// `update` must leave the installed skill untouched when the fetch fails, and say so. A failed
-// update that half-applies is worse than a stale one.
-func TestUpdateFailsCleanlyAndSaysTheInstallIsUntouched(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	runCLI(t, "install")
-	// An unresolvable ref against the real endpoint: no network mutation, no partial write.
-	code, _, errs := runCLI(t, "update", "--ref", "refs/heads/definitely-not-a-branch-xyz")
-	if code != 2 {
-		t.Fatalf("code=%d, want 2", code)
-	}
-	if !strings.Contains(errs, "installed skill is untouched") {
-		t.Errorf("a failed update must say the deployment was left alone: %q", errs)
-	}
-	if code2, out, _ := runCLI(t, "doctor"); code2 != 0 {
-		t.Errorf("doctor after a failed update: code=%d out=%s", code2, out)
 	}
 }

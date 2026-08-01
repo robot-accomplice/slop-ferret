@@ -17,7 +17,6 @@
 package main
 
 import (
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,9 +25,6 @@ import (
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
 	"github.com/robot-accomplice/slop-ferret/internal/install"
 )
-
-//go:embed all:skill
-var skillFS embed.FS
 
 // binVersion is this binary's own version, and it is DELIBERATELY not the skill's. They were one
 // number while the skill was compiled in, which meant a lexicon wording change needed a binary
@@ -51,7 +47,6 @@ Pairs with magma, which builds the call map ` + "`plan`" + ` reads. Run magma fi
 different tree is refused by construction.`
 
 func main() {
-	install.Embedded = skillFS
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 

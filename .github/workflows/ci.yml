@@ -75,5 +75,5 @@ jobs:
       - name: install into a scratch HOME and doctor it
         run: |
           export HOME="$(mktemp -d)"
-          go run . install
-          go run . doctor
+          go run ./cmd/ferret install
+          go run ./cmd/ferret doctor

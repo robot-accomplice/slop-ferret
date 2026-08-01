@@ -38,16 +38,16 @@ Both paths work. **Pinning is recommended** — a pinned version is reproducible
 publishing semver tags exists so that anyone who prefers to pin can:
 
 ```bash
-go install github.com/robot-accomplice/slop-ferret@v0.1.0    # pinned (recommended)
-go install github.com/robot-accomplice/slop-ferret@latest    # tracks HEAD
-slop-ferret install
+go install github.com/robot-accomplice/slop-ferret/cmd/ferret@v0.1.0   # pinned (recommended)
+go install github.com/robot-accomplice/slop-ferret/cmd/ferret@latest   # tracks HEAD
+ferret install
 ```
 
 No tag is published yet, so today that means `@latest` or a source build:
 
 ```bash
 git clone https://github.com/robot-accomplice/slop-ferret.git
-cd slop-ferret && just install && slop-ferret install
+cd slop-ferret && just install && ferret install
 ```
 
 `install` deploys the skill into `~/.claude/skills/slop-ferret/` and writes **both** command
@@ -57,9 +57,9 @@ entries (`/slop-ferret` and `/slop-ferret:report`).
 
 ```bash
 magma --depth 1 <repo> <name> ~/.slop-ferret/maps       # build the call map first
-slop-ferret plan ~/.slop-ferret/maps/<name> <sha> <repo> [--since <ref>] > plan.json
+ferret plan ~/.slop-ferret/maps/<name> <sha> <repo> [--since <ref>] > plan.json
 #   ... run the sweep, write discharge.json ...
-slop-ferret verify plan.json discharge.json             # 0 settled · 3 items open
+ferret verify plan.json discharge.json             # 0 settled · 3 items open
 ```
 
 | command | does |
@@ -101,9 +101,9 @@ often than the code, and usually for reasons the code does not care about.
 
 | source | command | when |
 |---|---|---|
-| **embedded** | `slop-ferret install` | bootstrap floor — offline, what a fresh install has before it has talked to anything |
-| **repo** | `slop-ferret update [--ref v0.1.0]` | the live `skill/` tree, pinned to the commit the ref resolved to |
-| **dir** | `slop-ferret install --from .` | the edit-build-install loop |
+| **embedded** | `ferret install` | bootstrap floor — offline, what a fresh install has before it has talked to anything |
+| **repo** | `ferret update [--ref v0.1.0]` | the live `skill/` tree, pinned to the commit the ref resolved to |
+| **dir** | `ferret install --from .` | the edit-build-install loop |
 
 `version` and `doctor` print the binary version and the skill version **separately**, with the
 provenance of the deployed copy. An update stages to a temp dir first: a half-applied update is
