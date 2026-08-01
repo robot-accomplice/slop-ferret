@@ -39,9 +39,10 @@ type Source struct {
 }
 
 const (
-	// The public repo. No token, no API, no update server: one HTTPS GET of a tarball the
-	// forge already builds. For one user, anything more is infrastructure for its own sake.
-	tarballURL = "https://codeload.github.com/robot-accomplice/slop-ferret/tar.gz/refs/heads/"
+	// The public repo. No token and no update server: the forge already builds the tarball.
+	// Two requests, not one — see resolveRef.
+	tarballURL = "https://codeload.github.com/robot-accomplice/slop-ferret/tar.gz/"
+	refAPIURL  = "https://api.github.com/repos/robot-accomplice/slop-ferret/commits/"
 	fetchLimit = 32 << 20 // a skill tree is prose; anything near this is wrong
 	// The archive's top-level dir is `<repo>-<sha>`; that is how a ref gets pinned to the
 	// commit it actually resolved to at fetch time.
@@ -58,12 +59,22 @@ func Fetch(ref string) (Source, func(), error) {
 		ref = "main"
 	}
 	noop := func() {}
-	req, err := http.NewRequest("GET", tarballURL+ref, nil)
+	client := &http.Client{Timeout: 60 * time.Second}
+
+	// Resolve the ref to a commit BEFORE downloading, and download that commit.
+	//
+	// The first version fetched `/tar.gz/refs/heads/<ref>` and read the sha out of the archive's
+	// top-level directory name. For a branch that directory is `<repo>-<branch>`, not
+	// `<repo>-<sha>`, so the recorded provenance was `repo@main (main)` — a restatement of the
+	// input dressed as a resolution of it. The comment asserting it pinned the commit was, by
+	// this tool's own lexicon, a `Fabricated claim`: prose describing behaviour the code lacked,
+	// shipped inside the updater. Resolving first makes the claim true and the download
+	// reproducible, which is the point of recording a sha at all.
+	sha, err := resolveRef(client, ref)
 	if err != nil {
 		return Source{}, noop, err
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := client.Get(tarballURL + sha)
 	if err != nil {
 		return Source{}, noop, fmt.Errorf("fetching skill at %q: %w", ref, err)
 	}
@@ -86,10 +97,7 @@ func Fetch(ref string) (Source, func(), error) {
 	}
 	defer gz.Close()
 
-	// The archive's top-level directory is `slop-<resolved-sha>`, which is how a ref name gets
-	// pinned to the commit it actually resolved to at fetch time. Recording the ref alone would
-	// make "installed from main" unreproducible the moment main moves.
-	resolved, n := "", 0
+	n := 0
 	tr := tar.NewReader(gz)
 	for {
 		hdr, err := tr.Next()
@@ -102,9 +110,6 @@ func Fetch(ref string) (Source, func(), error) {
 		}
 		name := path.Clean(hdr.Name)
 		parts := strings.SplitN(name, "/", 2)
-		if resolved == "" && strings.HasPrefix(parts[0], archivePrefix) {
-			resolved = strings.TrimPrefix(parts[0], archivePrefix)
-		}
 		if len(parts) < 2 || !strings.HasPrefix(parts[1], "skill/") {
 			continue // only the skill tree; the code half is this binary's problem, not the skill's
 		}
@@ -144,10 +149,38 @@ func Fetch(ref string) (Source, func(), error) {
 		cleanup()
 		return Source{}, noop, fmt.Errorf("no skill/ tree in the archive at %q — nothing to install", ref)
 	}
-	if len(resolved) > 12 {
-		resolved = resolved[:12]
+	short := sha
+	if len(short) > 12 {
+		short = short[:12]
 	}
-	return Source{FS: os.DirFS(tmp), Desc: fmt.Sprintf("repo@%s (%s)", ref, resolved)}, cleanup, nil
+	return Source{FS: os.DirFS(tmp), Desc: fmt.Sprintf("repo@%s %s", ref, short)}, cleanup, nil
+}
+
+// resolveRef turns a branch, tag or sha into the commit sha it names right now. Recording the ref
+// alone would make "installed from main" unreproducible the moment main moves.
+func resolveRef(client *http.Client, ref string) (string, error) {
+	req, err := http.NewRequest("GET", refAPIURL+ref, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github.sha")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("resolving ref %q: %w", ref, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("resolving ref %q: HTTP %d (is the ref right?)", ref, resp.StatusCode)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 128))
+	if err != nil {
+		return "", err
+	}
+	sha := strings.TrimSpace(string(b))
+	if len(sha) < 7 {
+		return "", fmt.Errorf("resolving ref %q: unexpected response %q", ref, sha)
+	}
+	return sha, nil
 }
 
 // DirSource installs from a local checkout: the edit-build-install loop, and the escape hatch when
