@@ -1,3 +1,5 @@
 /slop-ferret
+coverage.out
+dist/
 __pycache__/
 *.pyc

@@ -20,6 +20,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
@@ -51,28 +52,37 @@ different tree is refused by construction.`
 
 func main() {
 	install.Embedded = skillFS
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run is main's body with the process boundary lifted out, so dispatch is testable. main() itself
+// then contains nothing that can be wrong except the wiring a compiler already checks.
+func run(argv []string, stdout, stderr io.Writer) int {
+	if len(argv) < 1 {
+		fmt.Fprintln(stderr, usage)
+		return 2
 	}
-	args := os.Args[2:]
-	switch os.Args[1] {
+	args := argv[1:]
+	switch argv[0] {
 	case "plan":
-		os.Exit(cmdPlan(args))
+		return cmdPlan(args, stdout, stderr)
 	case "verify":
-		os.Exit(cmdVerify(args))
+		return cmdVerify(args, stdout, stderr)
 	case "update":
-		os.Exit(cmdUpdate(args))
+		return cmdUpdate(args, stdout, stderr)
 	case "install":
-		os.Exit(cmdInstall(args))
+		return cmdInstall(args, stdout, stderr)
 	case "doctor":
-		os.Exit(install.Doctor(os.Stdout, install.EmbeddedSource(binVersion), binVersion))
-	case "version":
-		fmt.Printf("slop-ferret %s · embedded skill %s\n", binVersion,
+		return install.Doctor(stdout, install.EmbeddedSource(binVersion), binVersion)
+	// `--version` is spelled both ways on purpose: release.yml parses `--version` to check the tag
+	// against the binary, matching the sibling projects' release gate.
+	case "version", "--version", "-v":
+		fmt.Fprintf(stdout, "slop-ferret %s · embedded skill %s\n", binVersion,
 			install.SkillVersion(install.EmbeddedSource(binVersion)))
+		return 0
 	default:
-		fmt.Fprintln(os.Stderr, usage)
-		os.Exit(2)
+		fmt.Fprintln(stderr, usage)
+		return 2
 	}
 }
 
@@ -97,67 +107,67 @@ func has(args []string, name string) bool {
 
 // cmdUpdate is the reason the skill is no longer welded to the binary: prose changes land here
 // without a rebuild.
-func cmdUpdate(args []string) int {
+func cmdUpdate(args []string, stdout, stderr io.Writer) int {
 	_, ref := flagValue(args, "--ref")
 	src, cleanup, err := install.Fetch(ref)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "slop-ferret: %v\n", err)
-		fmt.Fprintln(os.Stderr, "  the installed skill is untouched; `install` still works offline "+
+		fmt.Fprintf(stderr, "slop-ferret: %v\n", err)
+		fmt.Fprintln(stderr, "  the installed skill is untouched; `install` still works offline "+
 			"from the copy compiled in")
 		return 2
 	}
 	defer cleanup()
-	return install.Install(os.Stdout, src, has(args, "--force"))
+	return install.Install(stdout, src, has(args, "--force"))
 }
 
-func cmdInstall(args []string) int {
+func cmdInstall(args []string, stdout, stderr io.Writer) int {
 	args, from := flagValue(args, "--from")
 	src := install.EmbeddedSource(binVersion)
 	if from != "" {
 		s, err := install.DirSource(from)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "slop-ferret: %v\n", err)
+			fmt.Fprintf(stderr, "slop-ferret: %v\n", err)
 			return 2
 		}
 		src = s
 	}
-	return install.Install(os.Stdout, src, has(args, "--force"))
+	return install.Install(stdout, src, has(args, "--force"))
 }
 
-func fail(err error) int {
+func fail(err error, stderr io.Writer) int {
 	code := 2
 	if e, ok := err.(*gate.Err); ok {
 		code = e.Code
 	}
-	fmt.Fprintf(os.Stderr, "slop-ferret: %v\n", err)
+	fmt.Fprintf(stderr, "slop-ferret: %v\n", err)
 	return code
 }
 
-func cmdPlan(args []string) int {
+func cmdPlan(args []string, stdout, stderr io.Writer) int {
 	args, since := flagValue(args, "--since")
 	if len(args) != 3 {
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintln(stderr, usage)
 		return 2
 	}
 	p, err := gate.BuildPlan(args[0], args[1], args[2], since)
 	if err != nil {
-		return fail(err)
+		return fail(err, stderr)
 	}
 	b, _ := json.MarshalIndent(p, "", " ")
-	fmt.Println(string(b))
+	fmt.Fprintln(stdout, string(b))
 	return 0
 }
 
-func cmdVerify(args []string) int {
+func cmdVerify(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
-		fmt.Fprintln(os.Stderr, usage)
+		fmt.Fprintln(stderr, usage)
 		return 2
 	}
 	res, code, err := gate.Verify(args[0], args[1])
 	if err != nil {
-		return fail(err)
+		return fail(err, stderr)
 	}
 	b, _ := json.MarshalIndent(res, "", " ")
-	fmt.Println(string(b))
+	fmt.Fprintln(stdout, string(b))
 	return code
 }

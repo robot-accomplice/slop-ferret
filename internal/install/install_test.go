@@ -107,7 +107,7 @@ func TestInstallRefusesToClobberAHandEditedFile(t *testing.T) {
 func TestForceOverwritesAfterSayingWhatIsLost(t *testing.T) {
 	home, src, out := setup(t)
 	Install(out, src, false)
-	os.WriteFile(filepath.Join(dest(home), "SKILL.md"), []byte("# mine\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dest(home), "SKILL.md"), []byte("# mine\n"), 0o644))
 	out.Reset()
 	if code := Install(out, src, true); code != 0 {
 		t.Fatalf("forced install = %d: %s", code, out)
@@ -122,7 +122,7 @@ func TestForceOverwritesAfterSayingWhatIsLost(t *testing.T) {
 func TestDoctorNamesTheFileEditedInPlace(t *testing.T) {
 	home, src, out := setup(t)
 	Install(out, src, false)
-	os.WriteFile(filepath.Join(dest(home), "references", "families.md"), []byte("# ed\n"), 0o644)
+	must(t, os.WriteFile(filepath.Join(dest(home), "references", "families.md"), []byte("# ed\n"), 0o644))
 	out.Reset()
 	if code := Doctor(out, src, "test-bin"); code != 1 {
 		t.Fatalf("doctor = %d, want 1: %s", code, out)
@@ -209,5 +209,25 @@ func TestANewerSkillInstallsWithoutANewBinary(t *testing.T) {
 	if !strings.Contains(out.String(), "binary test-bin") ||
 		!strings.Contains(out.String(), "skill 2026-09-01.1") {
 		t.Errorf("doctor must print both versions separately: %s", out)
+	}
+}
+
+func writeTree(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for rel, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

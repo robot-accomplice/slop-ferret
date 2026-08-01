@@ -1,0 +1,38 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+# Keep the standard set (errcheck, govet, ineffassign, staticcheck, unused) and add a couple of
+# low-noise checks. slop-ferret is small; the bar is "clean by default".
+linters:
+  default: standard
+  enable:
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      # Writing to an already-chosen io.Writer (stdout/stderr) and ignoring the error is the
+      # accepted idiom: there is nowhere to report a failed report. This is excluded rather than
+      # papered over with `_, _ =` at 22 sites, which would add noise without adding a check.
+      # Everything else errcheck flags still fails the build.
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Fprint
+        # Idiomatic cleanup discards. The lexicon's own `Silent failure` entry says to exclude
+        # these explicitly; a deferred Close whose error nobody can act on is not a swallowed
+        # error. Everything else errcheck flags still fails the build.
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*compress/gzip.Reader).Close
+        - (*net/http.Response).Body.Close
+        - os.RemoveAll
+    misspell:
+      ignore-rules:
+        - roboticus # a real repository name, not a misspelling of "robotics"
+        - ferret
+
+formatters:
+  enable:
+    - gofmt

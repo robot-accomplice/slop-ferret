@@ -5,6 +5,7 @@ package gate
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,9 @@ func gitRepo(t *testing.T, files map[string]string) string {
 	d := t.TempDir()
 	for rel, body := range files {
 		p := filepath.Join(d, filepath.FromSlash(rel))
-		os.MkdirAll(filepath.Dir(p), 0o755)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -239,7 +242,9 @@ func writeJSON(t *testing.T, v any) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "f.json")
 	b, _ := json.Marshal(v)
-	os.WriteFile(p, b, 0o644)
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	return p
 }
 
@@ -444,4 +449,94 @@ func contains(s []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// Above the floor the worklist splits by CONSEQUENCE, not by a top-N cap: a numeric cap is a magic
+// number nobody can defend and would silently drop whatever sorted last. roboticus @443681b9
+// enumerated 387 paths with every one required, so no honest sweep there could reach a verdict.
+func TestALargeWorklistSplitsByConsequence(t *testing.T) {
+	files := map[string]string{}
+	for i := 0; i < 40; i++ {
+		files[fmt.Sprintf("internal/wallet/pay%02d.go", i)] = "package w\n"  // tier 1: money
+		files[fmt.Sprintf("internal/client/http%02d.go", i)] = "package c\n" // tier 2: network
+	}
+	repo := gitRepo(t, files)
+	p := planFor(t, repo)
+	if len(p.HWorklist) <= hDeferFloor {
+		t.Fatalf("fixture too small to exercise the split: %d", len(p.HWorklist))
+	}
+	if len(p.HDeferred) == 0 {
+		t.Fatal("a large worklist must defer the volume tier")
+	}
+	for _, w := range p.HRequired {
+		if hTier2[w.Reason] {
+			t.Errorf("tier-2 reason %q must not be in the required tier", w.Reason)
+		}
+	}
+	req := map[string]bool{}
+	for _, w := range p.HRequired {
+		req[w.Path] = true
+	}
+	for _, w := range p.HDeferred {
+		if req[w.Path] {
+			t.Errorf("%s is in both tiers", w.Path)
+		}
+	}
+}
+
+// --since compares the enumeration against a set already known to matter — what actually changed.
+// Measured on roboticus: 6 of 6 production files changed in the last 12 release commits were on
+// neither the 387-path worklist nor the 129-path required tier.
+func TestSinceReportsChangedFilesNoSignalReached(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	writeAndCommit(t, repo, "internal/widget/shape.go", "package widget\n")
+	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+	p, err := BuildPlan(m, "abc123", repo, "HEAD~1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, u := range p.HUnmatchedChanges {
+		got = append(got, u.Path)
+	}
+	if !contains(got, "internal/widget/shape.go") {
+		t.Errorf("h_unmatched_changes = %v, want the unenumerated changed file", got)
+	}
+	if p.ChangeBaseline != "HEAD~1" {
+		t.Errorf("change_baseline = %q", p.ChangeBaseline)
+	}
+}
+
+func TestWithoutSinceThereIsNoChangeCrossCheck(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	writeAndCommit(t, repo, "internal/widget/shape.go", "package widget\n")
+	p := planFor(t, repo)
+	if len(p.HUnmatchedChanges) != 0 {
+		t.Errorf("a whole-repo sweep has no change set to compare against: %v", p.HUnmatchedChanges)
+	}
+}
+
+func TestAnUnreadableRepoFailsLoud(t *testing.T) {
+	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "abc123", filepath.Join(t.TempDir(), "not-a-git-repo"), "")
+	if err == nil {
+		t.Fatal("a non-repo must fail loud, not enumerate nothing and look clean")
+	}
+}
+
+func writeAndCommit(t *testing.T, repo, rel, body string) {
+	t.Helper()
+	p := filepath.Join(repo, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "-A"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "second"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
 }

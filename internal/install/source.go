@@ -38,11 +38,16 @@ type Source struct {
 	Desc string // human-readable provenance, recorded in the manifest
 }
 
-const (
-	// The public repo. No token and no update server: the forge already builds the tarball.
-	// Two requests, not one — see resolveRef.
+// The public repo. No token and no update server: the forge already builds the tarball.
+// Two requests, not one — see resolveRef. Vars, not consts, so the fetch path is testable
+// against a local server: an updater whose only exercise is against the live internet is one
+// that gets tested by its users.
+var (
 	tarballURL = "https://codeload.github.com/robot-accomplice/slop-ferret/tar.gz/"
 	refAPIURL  = "https://api.github.com/repos/robot-accomplice/slop-ferret/commits/"
+)
+
+const (
 	fetchLimit = 32 << 20 // a skill tree is prose; anything near this is wrong
 	// The archive's top-level dir is `<repo>-<sha>`; that is how a ref gets pinned to the
 	// commit it actually resolved to at fetch time.
@@ -122,7 +127,10 @@ func Fetch(ref string) (Source, func(), error) {
 		}
 		dst := filepath.Join(tmp, filepath.FromSlash(rel))
 		if hdr.Typeflag == tar.TypeDir {
-			os.MkdirAll(dst, 0o755)
+			if err := os.MkdirAll(dst, 0o755); err != nil {
+				cleanup()
+				return Source{}, noop, err
+			}
 			continue
 		}
 		if hdr.Typeflag != tar.TypeReg {
