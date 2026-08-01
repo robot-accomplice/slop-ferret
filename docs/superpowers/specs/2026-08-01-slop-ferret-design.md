@@ -261,5 +261,7 @@ What already satisfies this spec, and what does not.
 ## 11. Open
 
 - **Nothing blocking.** D8 and D9 are author's calls and are marked overturnable.
+- **Exit-code split (§7)** — proposed, not yet agreed. Found by this spec's own self-review, which
+  is the first thing in this project that a design document caught before the code shipped.
 - The go/no-go ship review has not been run. Nothing here should be read as a statement that the
   tool is ready; §3 is explicit that it is not.
