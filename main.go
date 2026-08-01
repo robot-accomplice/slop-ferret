@@ -1,18 +1,19 @@
-// Command slop is the tool half of the slop-ferret method.
+// Command slop-ferret is the tool half of the slop-ferret method.
 //
-//	slop install [--force]   deploy the embedded skill into ~/.claude
-//	slop doctor              report drift, in both directions
-//	slop version             the embedded skill version
+//	slop-ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
+//	slop-ferret verify <plan.json> <discharge.json>            ; 0 settled, 3 items open
+//	slop-ferret update [--ref main]                            pull the skill from the repo
+//	slop-ferret install [--from <dir>] [--force]               deploy a skill tree
+//	slop-ferret doctor                                         drift, in both directions
+//	slop-ferret version                                        binary and embedded skill versions
 //
-// The split is deliberate and it is the same split everywhere: DETERMINISTIC TRANSFORMS belong
-// here, JUDGEMENT belongs in the skill. Enumerating files, computing coverage fractions and
-// laying out a report need no model, and all three were being done by hand — one of them badly
-// enough to ship two HTML defects in a single report. Deciding whether a finding clears its bar
-// does need a model, and no amount of Go will do it.
+// The name is the hunter, not the quarry: this ferrets slop out, it does not produce it.
 //
-// This is a tool for the person running the sweep. It is not an evaluation of them, it has one
-// user, and there is nothing to defend against — so its outputs are a work queue and an honest
-// instrument reading, never a score.
+// The split it enforces: DETERMINISTIC TRANSFORMS belong here, JUDGEMENT belongs in the skill.
+// Enumerating files and computing coverage fractions need no model. Deciding whether a finding
+// clears its pre-filing bar does, and no amount of Go will do it — which is also why the HTML
+// report is authored rather than generated, and why its spec lives in the skill where it can be
+// revised without a binary release.
 package main
 
 import (
@@ -21,45 +22,106 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/robot-accomplice/slop/internal/gate"
-	"github.com/robot-accomplice/slop/internal/install"
+	"github.com/robot-accomplice/slop-ferret/internal/gate"
+	"github.com/robot-accomplice/slop-ferret/internal/install"
 )
 
 //go:embed all:skill
 var skillFS embed.FS
 
-const usage = `slop — companion tool for the slop-ferret sweep
+// binVersion is this binary's own version, and it is DELIBERATELY not the skill's. They were one
+// number while the skill was compiled in, which meant a lexicon wording change needed a binary
+// release to reach a sweep. Two artifacts, two cadences, two versions.
+const binVersion = "0.1.0"
 
-  slop plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-  slop verify <plan.json> <discharge.json>            ; 0 settled, 3 items open
-  slop install [--force]                              deploy the embedded skill into ~/.claude
-  slop doctor                                         drift, in both directions
-  slop version                                        the embedded skill version
+const usage = `slop-ferret — ferrets AI slop out of a repository
 
-Pairs with magma (github.com/robot-accomplice/magma), which builds the call map slop plans from.
-Run magma first; slop refuses a map of a different tree by construction.`
+  slop-ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
+  slop-ferret verify <plan.json> <discharge.json>            0 settled, 3 items open
+  slop-ferret update [--ref main]                            pull the skill from the repo
+  slop-ferret install [--from <dir>] [--force]               deploy a skill tree into ~/.claude
+  slop-ferret doctor                                         drift, in both directions
+  slop-ferret version                                        binary + skill versions
+
+The skill (SKILL.md, the lexicon) ships separately from this binary and updates on its own
+cadence: ` + "`update`" + ` pulls it from the repo, ` + "`install`" + ` falls back to the copy compiled in.
+
+Pairs with magma, which builds the call map ` + "`plan`" + ` reads. Run magma first; a map of a
+different tree is refused by construction.`
 
 func main() {
-	install.SkillFS = skillFS
+	install.Embedded = skillFS
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
+	args := os.Args[2:]
 	switch os.Args[1] {
 	case "plan":
-		os.Exit(cmdPlan(os.Args[2:]))
+		os.Exit(cmdPlan(args))
 	case "verify":
-		os.Exit(cmdVerify(os.Args[2:]))
+		os.Exit(cmdVerify(args))
+	case "update":
+		os.Exit(cmdUpdate(args))
 	case "install":
-		os.Exit(install.Install(os.Stdout, len(os.Args) > 2 && os.Args[2] == "--force"))
+		os.Exit(cmdInstall(args))
 	case "doctor":
-		os.Exit(install.Doctor(os.Stdout))
+		os.Exit(install.Doctor(os.Stdout, install.EmbeddedSource(binVersion), binVersion))
 	case "version":
-		fmt.Println(install.Version())
+		fmt.Printf("slop-ferret %s · embedded skill %s\n", binVersion,
+			install.SkillVersion(install.EmbeddedSource(binVersion)))
 	default:
 		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
+}
+
+func flagValue(args []string, name string) ([]string, string) {
+	for i := 0; i < len(args); i++ {
+		if args[i] == name && i+1 < len(args) {
+			v := args[i+1]
+			return append(args[:i:i], args[i+2:]...), v
+		}
+	}
+	return args, ""
+}
+
+func has(args []string, name string) bool {
+	for _, a := range args {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// cmdUpdate is the reason the skill is no longer welded to the binary: prose changes land here
+// without a rebuild.
+func cmdUpdate(args []string) int {
+	_, ref := flagValue(args, "--ref")
+	src, cleanup, err := install.Fetch(ref)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "slop-ferret: %v\n", err)
+		fmt.Fprintln(os.Stderr, "  the installed skill is untouched; `install` still works offline "+
+			"from the copy compiled in")
+		return 2
+	}
+	defer cleanup()
+	return install.Install(os.Stdout, src, has(args, "--force"))
+}
+
+func cmdInstall(args []string) int {
+	args, from := flagValue(args, "--from")
+	src := install.EmbeddedSource(binVersion)
+	if from != "" {
+		s, err := install.DirSource(from)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "slop-ferret: %v\n", err)
+			return 2
+		}
+		src = s
+	}
+	return install.Install(os.Stdout, src, has(args, "--force"))
 }
 
 func fail(err error) int {
@@ -67,23 +129,12 @@ func fail(err error) int {
 	if e, ok := err.(*gate.Err); ok {
 		code = e.Code
 	}
-	fmt.Fprintf(os.Stderr, "slop: %v\n", err)
+	fmt.Fprintf(os.Stderr, "slop-ferret: %v\n", err)
 	return code
 }
 
 func cmdPlan(args []string) int {
-	since := ""
-	for i := 0; i < len(args); i++ {
-		if args[i] == "--since" {
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "slop: --since needs a git ref")
-				return 2
-			}
-			since = args[i+1]
-			args = append(args[:i], args[i+2:]...)
-			break
-		}
-	}
+	args, since := flagValue(args, "--since")
 	if len(args) != 3 {
 		fmt.Fprintln(os.Stderr, usage)
 		return 2

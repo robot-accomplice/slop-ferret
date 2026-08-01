@@ -22,20 +22,19 @@ func fakeSkill() fstest.MapFS {
 	}
 }
 
-func setup(t *testing.T) (home string, out *bytes.Buffer) {
+func setup(t *testing.T) (home string, src Source, out *bytes.Buffer) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("HOME", home)
-	SkillFS = fakeSkill()
-	return home, &bytes.Buffer{}
+	return home, Source{FS: fakeSkill(), Desc: "test"}, &bytes.Buffer{}
 }
 
 func dest(home string) string { return filepath.Join(home, ".claude", "skills", "slop-ferret") }
 func cmds(home string) string { return filepath.Join(home, ".claude", "commands") }
 
 func TestInstallDeploysSkillAndBothCommandEntries(t *testing.T) {
-	home, out := setup(t)
-	if code := Install(out, false); code != 0 {
+	home, src, out := setup(t)
+	if code := Install(out, src, false); code != 0 {
 		t.Fatalf("install = %d: %s", code, out)
 	}
 	for _, rel := range []string{"SKILL.md", "references/ai-slop-lexicon.md"} {
@@ -54,10 +53,10 @@ func TestInstallDeploysSkillAndBothCommandEntries(t *testing.T) {
 }
 
 func TestDoctorIsCleanRightAfterInstall(t *testing.T) {
-	_, out := setup(t)
-	Install(out, false)
+	_, src, out := setup(t)
+	Install(out, src, false)
 	out.Reset()
-	if code := Doctor(out); code != 0 {
+	if code := Doctor(out, src, "test-bin"); code != 0 {
 		t.Fatalf("doctor = %d, want 0: %s", code, out)
 	}
 }
@@ -66,13 +65,13 @@ func TestDoctorIsCleanRightAfterInstall(t *testing.T) {
 // not be invoked, so allowed-tools never applied, so Edit and Artifact were withheld in prose
 // only — and a pre-registered control ran the whole method holding both.
 func TestDoctorCatchesAHalfInstall(t *testing.T) {
-	home, out := setup(t)
-	Install(out, false)
+	home, src, out := setup(t)
+	Install(out, src, false)
 	if err := os.Remove(filepath.Join(cmds(home), "slop-ferret.md")); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if code := Doctor(out); code != 1 {
+	if code := Doctor(out, src, "test-bin"); code != 1 {
 		t.Fatalf("doctor = %d, want 1: %s", code, out)
 	}
 	if !strings.Contains(out.String(), "command entry missing") {
@@ -86,14 +85,14 @@ func TestDoctorCatchesAHalfInstall(t *testing.T) {
 // The failure guarded against is "I edited the deployed copy by mistake", not an attack.
 // Overwriting silently would eat real work.
 func TestInstallRefusesToClobberAHandEditedFile(t *testing.T) {
-	home, out := setup(t)
-	Install(out, false)
+	home, src, out := setup(t)
+	Install(out, src, false)
 	mine := "# my in-progress edits\n"
 	if err := os.WriteFile(filepath.Join(dest(home), "SKILL.md"), []byte(mine), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()
-	if code := Install(out, false); code != 3 {
+	if code := Install(out, src, false); code != 3 {
 		t.Fatalf("install = %d, want 3: %s", code, out)
 	}
 	if !strings.Contains(out.String(), "REFUSING") || !strings.Contains(out.String(), "SKILL.md") {
@@ -106,11 +105,11 @@ func TestInstallRefusesToClobberAHandEditedFile(t *testing.T) {
 }
 
 func TestForceOverwritesAfterSayingWhatIsLost(t *testing.T) {
-	home, out := setup(t)
-	Install(out, false)
+	home, src, out := setup(t)
+	Install(out, src, false)
 	os.WriteFile(filepath.Join(dest(home), "SKILL.md"), []byte("# mine\n"), 0o644)
 	out.Reset()
-	if code := Install(out, true); code != 0 {
+	if code := Install(out, src, true); code != 0 {
 		t.Fatalf("forced install = %d: %s", code, out)
 	}
 	got, _ := os.ReadFile(filepath.Join(dest(home), "SKILL.md"))
@@ -121,11 +120,11 @@ func TestForceOverwritesAfterSayingWhatIsLost(t *testing.T) {
 
 // What the retired digest scheme could never do: say WHICH file, and in which direction.
 func TestDoctorNamesTheFileEditedInPlace(t *testing.T) {
-	home, out := setup(t)
-	Install(out, false)
+	home, src, out := setup(t)
+	Install(out, src, false)
 	os.WriteFile(filepath.Join(dest(home), "references", "families.md"), []byte("# ed\n"), 0o644)
 	out.Reset()
-	if code := Doctor(out); code != 1 {
+	if code := Doctor(out, src, "test-bin"); code != 1 {
 		t.Fatalf("doctor = %d, want 1: %s", code, out)
 	}
 	if !strings.Contains(out.String(), "families.md") ||
@@ -137,13 +136,13 @@ func TestDoctorNamesTheFileEditedInPlace(t *testing.T) {
 // Deployed file untouched since install, but the binary has moved on: that is "out of date",
 // which is a different message and a different fix from "you edited it".
 func TestDoctorDistinguishesOutOfDateFromEditedInPlace(t *testing.T) {
-	_, out := setup(t)
-	Install(out, false)
-	fs := fakeSkill()
-	fs["skill/references/families.md"] = &fstest.MapFile{Data: []byte("# newer upstream\n")}
-	SkillFS = fs
+	_, src, out := setup(t)
+	Install(out, src, false)
+	newer := fakeSkill()
+	newer["skill/references/families.md"] = &fstest.MapFile{Data: []byte("# newer upstream\n")}
+	src = Source{FS: newer, Desc: "test-newer"}
 	out.Reset()
-	if code := Doctor(out); code != 1 {
+	if code := Doctor(out, src, "test-bin"); code != 1 {
 		t.Fatalf("doctor = %d, want 1: %s", code, out)
 	}
 	if !strings.Contains(out.String(), "out of date") {
@@ -155,8 +154,8 @@ func TestDoctorDistinguishesOutOfDateFromEditedInPlace(t *testing.T) {
 }
 
 func TestDoctorReportsNotInstalledRatherThanCrashing(t *testing.T) {
-	_, out := setup(t)
-	if code := Doctor(out); code != 1 {
+	_, src, out := setup(t)
+	if code := Doctor(out, src, "test-bin"); code != 1 {
 		t.Fatalf("doctor = %d, want 1: %s", code, out)
 	}
 	if !strings.Contains(out.String(), "not installed") {
@@ -165,10 +164,10 @@ func TestDoctorReportsNotInstalledRatherThanCrashing(t *testing.T) {
 }
 
 func TestInstallIsIdempotent(t *testing.T) {
-	_, out := setup(t)
-	Install(out, false)
+	_, src, out := setup(t)
+	Install(out, src, false)
 	out.Reset()
-	if code := Install(out, false); code != 0 {
+	if code := Install(out, src, false); code != 0 {
 		t.Fatalf("second install = %d: %s", code, out)
 	}
 	if !strings.Contains(out.String(), "(0 changed)") {
@@ -176,9 +175,39 @@ func TestInstallIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestVersionComesFromTheEmbeddedStamp(t *testing.T) {
-	setup(t)
-	if got := Version(); got != "2026-08-01.8" {
-		t.Errorf("Version() = %q", got)
+func TestSkillVersionIsIndependentOfTheBinaryVersion(t *testing.T) {
+	_, src, _ := setup(t)
+	if got := SkillVersion(src); got != "2026-08-01.8" {
+		t.Errorf("SkillVersion() = %q", got)
+	}
+}
+
+// The whole point of splitting the source out: a skill tree with NEWER prose installs over the
+// same binary, and doctor reports the two versions separately rather than one number that cannot
+// distinguish "new binary" from "new lexicon".
+func TestANewerSkillInstallsWithoutANewBinary(t *testing.T) {
+	home, src, out := setup(t)
+	Install(out, src, false)
+	newer := fakeSkill()
+	newer["skill/VERSION"] = &fstest.MapFile{Data: []byte(`{"version":"2026-09-01.1"}`)}
+	newer["skill/references/ai-slop-lexicon.md"] = &fstest.MapFile{Data: []byte("# new class\n")}
+	next := Source{FS: newer, Desc: "repo@main (deadbeef)"}
+	out.Reset()
+	if c := Install(out, next, false); c != 0 {
+		t.Fatalf("install of a newer skill = %d: %s", c, out)
+	}
+	if !strings.Contains(out.String(), "2026-09-01.1") ||
+		!strings.Contains(out.String(), "repo@main") {
+		t.Errorf("install must report the skill version AND its provenance: %s", out)
+	}
+	got, _ := os.ReadFile(filepath.Join(dest(home), "references", "ai-slop-lexicon.md"))
+	if string(got) != "# new class\n" {
+		t.Error("the newer lexicon must reach the deployed copy")
+	}
+	out.Reset()
+	Doctor(out, next, "test-bin")
+	if !strings.Contains(out.String(), "binary test-bin") ||
+		!strings.Contains(out.String(), "skill 2026-09-01.1") {
+		t.Errorf("doctor must print both versions separately: %s", out)
 	}
 }

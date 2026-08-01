@@ -17,9 +17,9 @@
 // The skill is EMBEDDED in the binary rather than read from a checkout, which is what makes the
 // upgrade path a single line:
 //
-//	go install github.com/robot-accomplice/slop@latest && slop install
+//	go install github.com/robot-accomplice/slop-ferret@latest && slop-ferret install
 //
-// Direction of truth: edit in the repo, build, install. `slop doctor` catches the case where the
+// Direction of truth: edit in the repo, build, install. `slop-ferret doctor` catches the case where the
 // hand edited the deployed copy instead — which is the common mistake, not a hypothetical.
 package install
 
@@ -36,11 +36,20 @@ import (
 	"strings"
 )
 
-// SkillFS is the embedded skill tree, injected by main. It lives at the repo root rather than
-// beside this package so the thing a human edits is the obvious top-level `skill/` directory;
-// go:embed can only reach inside its own package dir, so main owns the directive and hands the
-// filesystem down.
-var SkillFS fs.FS
+// Embedded is the skill tree compiled into the binary, injected by main. It lives at the repo
+// root rather than beside this package so the thing a human edits is the obvious top-level
+// `skill/` directory; go:embed can only reach inside its own package dir, so main owns the
+// directive and hands the filesystem down.
+//
+// It is the BOOTSTRAP FLOOR, not the only source. See source.go: skill prose changes far more
+// often than this code does, so binding the two to one release cadence meant a lexicon edit
+// needed a binary rebuild to reach a sweep.
+var Embedded fs.FS
+
+// EmbeddedSource wraps the compiled-in tree.
+func EmbeddedSource(binVersion string) Source {
+	return Source{FS: Embedded, Desc: "embedded (binary " + binVersion + ")"}
+}
 
 const (
 	embedRoot    = "skill"
@@ -55,7 +64,8 @@ var commands = map[string]string{
 }
 
 type manifest struct {
-	Version string            `json:"version"`
+	Version string            `json:"version"` // the SKILL's version, not the binary's
+	Source  string            `json:"source"`  // where it came from: embedded / repo@ref / dir:
 	Files   map[string]string `json:"files"`
 }
 
@@ -78,10 +88,10 @@ func hashBytes(b []byte) string {
 	return hex.EncodeToString(s[:])[:16]
 }
 
-// srcFiles lists the embedded skill, relative to embedRoot.
-func srcFiles() ([]string, error) {
+// srcFiles lists a source's skill tree, relative to embedRoot.
+func srcFiles(src Source) ([]string, error) {
 	var out []string
-	err := fs.WalkDir(SkillFS, embedRoot, func(p string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(src.FS, embedRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -96,23 +106,8 @@ func srcFiles() ([]string, error) {
 	return out, err
 }
 
-func srcBytes(rel string) ([]byte, error) {
-	return fs.ReadFile(SkillFS, embedRoot+"/"+rel)
-}
-
-// Version reads the embedded VERSION stamp.
-func Version() string {
-	b, err := srcBytes("VERSION")
-	if err != nil {
-		return "unknown"
-	}
-	var v struct {
-		Version string `json:"version"`
-	}
-	if json.Unmarshal(b, &v) != nil || v.Version == "" {
-		return "unknown"
-	}
-	return v.Version
+func srcBytes(src Source, rel string) ([]byte, error) {
+	return fs.ReadFile(src.FS, embedRoot+"/"+rel)
 }
 
 func readManifest(p paths) manifest {
@@ -140,15 +135,15 @@ const (
 // stLocal is the one that blocks. It means somebody edited the deployed copy, which is
 // recoverable information — so it is reported rather than resolved. This tool does not merge,
 // and guessing which side was intended is exactly the judgement a program should not make alone.
-func classify(p paths) (map[string]state, error) {
-	files, err := srcFiles()
+func classify(p paths, src Source) (map[string]state, error) {
+	files, err := srcFiles(src)
 	if err != nil {
 		return nil, err
 	}
 	man := readManifest(p).Files
 	out := make(map[string]state, len(files))
 	for _, rel := range files {
-		want, err := srcBytes(rel)
+		want, err := srcBytes(src, rel)
 		if err != nil {
 			return nil, err
 		}
@@ -193,15 +188,15 @@ func slashCommand(name string) string {
 }
 
 // Install writes the embedded skill and BOTH command entries.
-func Install(w io.Writer, force bool) int {
+func Install(w io.Writer, src Source, force bool) int {
 	p, err := newPaths()
 	if err != nil {
-		fmt.Fprintf(w, "slop: %v\n", err)
+		fmt.Fprintf(w, "slop-ferret: %v\n", err)
 		return 2
 	}
-	st, err := classify(p)
+	st, err := classify(p, src)
 	if err != nil {
-		fmt.Fprintf(w, "slop: %v\n", err)
+		fmt.Fprintf(w, "slop-ferret: %v\n", err)
 		return 2
 	}
 
@@ -214,7 +209,7 @@ func Install(w io.Writer, force bool) int {
 	sort.Strings(local)
 
 	if len(local) > 0 && !force {
-		fmt.Fprintf(w, "slop install: REFUSING — these deployed files differ from the embedded "+
+		fmt.Fprintf(w, "slop-ferret install: REFUSING — these deployed files differ from the embedded "+
 			"copy and were not written by this installer, so they were edited in place:\n\n")
 		for _, rel := range local {
 			fmt.Fprintf(w, "  %s\n", rel)
@@ -226,22 +221,22 @@ func Install(w io.Writer, force bool) int {
 		return 3
 	}
 
-	files, _ := srcFiles()
+	files, _ := srcFiles(src)
 	written := make(map[string]string, len(files))
 	changed := 0
 	for _, rel := range files {
-		b, err := srcBytes(rel)
+		b, err := srcBytes(src, rel)
 		if err != nil {
-			fmt.Fprintf(w, "slop: %v\n", err)
+			fmt.Fprintf(w, "slop-ferret: %v\n", err)
 			return 2
 		}
 		dst := filepath.Join(p.dest, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			fmt.Fprintf(w, "slop: %v\n", err)
+			fmt.Fprintf(w, "slop-ferret: %v\n", err)
 			return 2
 		}
 		if err := os.WriteFile(dst, b, 0o644); err != nil {
-			fmt.Fprintf(w, "slop: %v\n", err)
+			fmt.Fprintf(w, "slop-ferret: %v\n", err)
 			return 2
 		}
 		written[rel] = hashBytes(b)
@@ -252,19 +247,21 @@ func Install(w io.Writer, force bool) int {
 
 	for link, target := range linkTargets(p) {
 		if err := relink(link, target); err != nil {
-			fmt.Fprintf(w, "slop: linking %s: %v\n", link, err)
+			fmt.Fprintf(w, "slop-ferret: linking %s: %v\n", link, err)
 			return 2
 		}
 	}
 
-	mb, _ := json.MarshalIndent(manifest{Version: Version(), Files: written}, "", " ")
+	mb, _ := json.MarshalIndent(manifest{Version: SkillVersion(src), Source: src.Desc,
+		Files: written}, "", " ")
 	if err := os.WriteFile(filepath.Join(p.dest, manifestName), mb, 0o644); err != nil {
-		fmt.Fprintf(w, "slop: %v\n", err)
+		fmt.Fprintf(w, "slop-ferret: %v\n", err)
 		return 2
 	}
 
-	fmt.Fprintf(w, "slop install: %s — %d files deployed (%d changed), %d command entries linked\n",
-		Version(), len(written), changed, len(commands))
+	fmt.Fprintf(w, "slop-ferret install: skill %s from %s — %d files deployed (%d changed), "+
+		"%d command entries linked\n", SkillVersion(src), src.Desc, len(written), changed,
+		len(commands))
 	names := make([]string, 0, len(commands))
 	for name := range commands {
 		names = append(names, slashCommand(name))
@@ -277,10 +274,10 @@ func Install(w io.Writer, force bool) int {
 }
 
 // Doctor reports drift in both directions, and whether the install is actually complete.
-func Doctor(w io.Writer) int {
+func Doctor(w io.Writer, src Source, binVersion string) int {
 	p, err := newPaths()
 	if err != nil {
-		fmt.Fprintf(w, "slop: %v\n", err)
+		fmt.Fprintf(w, "slop-ferret: %v\n", err)
 		return 2
 	}
 	var problems []string
@@ -292,9 +289,9 @@ func Doctor(w io.Writer) int {
 			problems = append(problems,
 				"no install manifest — the deployed skill was not installed by this tool")
 		}
-		st, err := classify(p)
+		st, err := classify(p, src)
 		if err != nil {
-			fmt.Fprintf(w, "slop: %v\n", err)
+			fmt.Fprintf(w, "slop-ferret: %v\n", err)
 			return 2
 		}
 		keys := make([]string, 0, len(st))
@@ -309,7 +306,7 @@ func Doctor(w io.Writer) int {
 					"deployed copy edited in place: %s (your change is NOT in the repo)", rel))
 			case stStale:
 				problems = append(problems, fmt.Sprintf(
-					"out of date: %s (this binary is newer — run `slop install`)", rel))
+					"out of date: %s (the source is newer — run `slop-ferret update`)", rel))
 			case stMissing:
 				problems = append(problems, fmt.Sprintf("missing from the deployment: %s", rel))
 			}
@@ -332,7 +329,19 @@ func Doctor(w io.Writer) int {
 		}
 	}
 
-	fmt.Fprintf(w, "slop doctor: embedded skill %s\n", Version())
+	man := readManifest(p)
+	installed := man.Version
+	if installed == "" {
+		installed = "unknown"
+	}
+	from := man.Source
+	if from == "" {
+		from = "unrecorded"
+	}
+	// TWO VERSIONS, deliberately. They used to be one number because the skill was compiled in,
+	// and "which skill am I running" was answerable only as "whichever this binary shipped".
+	fmt.Fprintf(w, "slop-ferret doctor: binary %s · skill %s (installed from %s) · available %s\n",
+		binVersion, installed, from, SkillVersion(src))
 	if len(problems) == 0 {
 		fmt.Fprintf(w, "  ok — deployed copy matches the binary, both commands resolve\n")
 		return 0

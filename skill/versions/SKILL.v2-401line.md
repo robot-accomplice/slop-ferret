@@ -1,6 +1,6 @@
 ---
 name: slop-ferret
-description: Sweep a repository for AI slop — work that LOOKS finished and is not. Dead-on-arrival features, tests that cannot fail, guards that cannot fire, fabricated claims, duplicated rules, architectural drift, and latent "almost right" defects. Use when asked to audit, sweep, or hunt slop in a codebase; as a pre-release gate on a frozen branch; or after a large burst of work. Additive-only against the target tree — never edits in place. Every finding must clear a verification gate before it is written up; SUSPECTED findings are reported to the operator, never filed; nothing is filed until the destination tracker is confirmed. Always ends with /slop-ferret:report, which builds the HTML report.
+description: Sweep a repository for AI slop-ferret — work that LOOKS finished and is not. Dead-on-arrival features, tests that cannot fail, guards that cannot fire, fabricated claims, duplicated rules, architectural drift, and latent "almost right" defects. Use when asked to audit, sweep, or hunt slop in a codebase; as a pre-release gate on a frozen branch; or after a large burst of work. Additive-only against the target tree — never edits in place. Every finding must clear a verification gate before it is written up; SUSPECTED findings are reported to the operator, never filed; nothing is filed until the destination tracker is confirmed. Always ends with /slop-ferret:report, which builds the HTML report.
 allowed-tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch, TodoWrite, Artifact
 disable-model-invocation: true
 ---
