@@ -1,5 +1,7 @@
 # slop-ferret
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Companion tool for the `slop-ferret` sweep — the deterministic half of the method.
 
 The split it exists to enforce: **transforms belong in the tool, judgement belongs in the skill.**
@@ -116,3 +118,7 @@ ranking down to magma makes it a fact instead of a guess, and every magma consum
 symlinked the lexicon into an Obsidian vault so `[[wikilinks]]` resolved; that made the vault part
 of the tool's correctness, and two copies of one definition under one name is precisely the drift
 class this tool hunts. The dependency is removed rather than symlinked around.
+
+## Licence
+
+[MIT](LICENSE) -- Copyright (c) 2026 Jonathan Machen
