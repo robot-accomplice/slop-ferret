@@ -76,7 +76,7 @@ func code(err error) int {
 func TestRefusesOnWrongTreeSHA(t *testing.T) {
 	m := writeMap(t, "OLDSHA", "codemap-rows/1", "rta", true, nil)
 	_, err := BuildPlan(m, "NEWSHA", gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
-	if err == nil || code(err) != 3 || !strings.Contains(err.Error(), "different tree") {
+	if err == nil || code(err) != ExitRefused || !strings.Contains(err.Error(), "different tree") {
 		t.Fatalf("want refusal on sha mismatch, got %v", err)
 	}
 }
@@ -538,5 +538,32 @@ func writeAndCommit(t *testing.T, repo, rel, body string) {
 		if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
+	}
+}
+
+// A refusal and an unfinished sweep want opposite responses from a script: one means "read the
+// work queue", the other means "nothing was measured, your input is wrong". Sharing exit 3 made
+// them indistinguishable.
+func TestARefusalAndAnUnfinishedSweepUseDifferentExitCodes(t *testing.T) {
+	if ExitRefused == ExitItemsOpen {
+		t.Fatal("a refusal must not share an exit code with an unfinished sweep")
+	}
+	m := writeMap(t, "OLDSHA", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "NEWSHA", gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+	if err == nil {
+		t.Fatal("want a refusal")
+	}
+	if got := code(err); got != ExitRefused {
+		t.Fatalf("refusal exit = %d, want ExitRefused (%d)", got, ExitRefused)
+	}
+
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	pl := planFor(t, repo)
+	_, c, err := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{"sha": "abc123"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c != ExitItemsOpen {
+		t.Fatalf("unfinished sweep exit = %d, want ExitItemsOpen (%d)", c, ExitItemsOpen)
 	}
 }

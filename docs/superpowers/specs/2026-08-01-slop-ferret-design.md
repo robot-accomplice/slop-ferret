@@ -268,7 +268,7 @@ What already satisfies this spec, and what does not.
 ## 11. Open
 
 - **Nothing blocking.** All nine decisions are settled with the operator.
-- **Exit-code split (§7)** — proposed, not yet agreed. Found by this spec's own self-review, which
-  is the first thing in this project that a design document caught before the code shipped.
+- The exit-code split (§7) was found by this spec's own self-review — the first thing in this
+  project a design document caught before the code shipped. Now implemented.
 - The go/no-go ship review has not been run. Nothing here should be read as a statement that the
   tool is ready; §3 is explicit that it is not.

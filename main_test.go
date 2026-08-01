@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/robot-accomplice/slop-ferret/internal/gate"
 	"github.com/robot-accomplice/slop-ferret/internal/install"
 )
 
@@ -75,11 +76,11 @@ func TestVerifyRejectsWrongArity(t *testing.T) {
 }
 
 func TestPlanSurfacesTheGatesExitCode(t *testing.T) {
-	// A map dir that does not exist is a refusal (3), not a usage error (2). The distinction is
-	// the whole reason gate.Err carries a code.
+	// A map dir that does not exist is a REFUSAL, not a usage error and not an unfinished sweep.
+	// The three are separate exit codes precisely so a wrapping script can tell them apart.
 	code, _, errs := runCLI(t, "plan", filepath.Join(t.TempDir(), "nope"), "abc123", t.TempDir())
-	if code != 3 {
-		t.Fatalf("code=%d, want 3 (refusal): %s", code, errs)
+	if code != gate.ExitRefused {
+		t.Fatalf("code=%d, want ExitRefused (%d): %s", code, gate.ExitRefused, errs)
 	}
 }
 

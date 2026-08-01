@@ -172,7 +172,19 @@ var fidelityBar = map[string]string{
 		"confirm the item is not a published API, and not reached via cfg/macro/trait dispatch",
 }
 
-// Err carries an exit code so the CLI can distinguish a refusal (3) from misuse (2).
+// Exit codes. These are a CONTRACT with whatever script wraps this tool, so they are named rather
+// than spelled inline. 3 previously meant both "items still open" and "the tool refused": a caller
+// could not tell an unfinished sweep from a map of the wrong tree, and those want opposite
+// responses -- one says read the work queue, the other says nothing was measured. 4 was free, being
+// the retired PARTIAL verdict's code.
+const (
+	ExitOK        = 0 // nothing raised is undispositioned
+	ExitMisuse    = 2 // wrong arity, unreadable file
+	ExitItemsOpen = 3 // the sweep is not finished; read `remaining`
+	ExitRefused   = 4 // the tool declined to run: wrong tree, unknown contract, missing map
+)
+
+// Err carries an exit code so the CLI can distinguish a refusal from misuse.
 type Err struct {
 	Msg  string
 	Code int
@@ -278,7 +290,7 @@ func gitLines(repo string, args ...string) ([]string, error) {
 		if len(msg) > 200 {
 			msg = msg[:200]
 		}
-		return nil, die(2, "git %s failed in %s: %s", strings.Join(args, " "), repo, msg)
+		return nil, die(ExitMisuse, "git %s failed in %s: %s", strings.Join(args, " "), repo, msg)
 	}
 	var lines []string
 	for _, l := range strings.Split(strings.ReplaceAll(string(out), "\x00", "\n"), "\n") {
@@ -385,7 +397,7 @@ func unmatchedChanges(repo, since string, signals []signal) ([]WorkItem, error) 
 func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, error) {
 	d := mapdir
 	if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
-		return nil, nil, die(3, "map dir %s does not exist — run magma first", mapdir)
+		return nil, nil, die(ExitRefused, "map dir %s does not exist — run magma first", mapdir)
 	}
 	// Tolerate being handed either the map root or the .magma subdir itself. Row files live under
 	// <map>/.magma/, not at the map root; this gate read the root for its whole life and exited 3
@@ -406,17 +418,17 @@ func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, e
 				unseeded[name] = fam
 				continue
 			}
-			return nil, nil, die(3, "%s missing from %s — regenerate the map with "+
+			return nil, nil, die(ExitRefused, "%s missing from %s — regenerate the map with "+
 				"`magma <repo> <name> <vault>`. If magma was itself updated, pass --force: "+
 				"freshness is keyed on the ANALYSED repo's sha, not on magma's version, so an "+
 				"unchanged repo silently reports 'already fresh' and writes nothing.", name, d)
 		}
 		var doc rowDoc
 		if err := json.Unmarshal(b, &doc); err != nil {
-			return nil, nil, die(3, "%s is not valid JSON: %v", name, err)
+			return nil, nil, die(ExitRefused, "%s is not valid JSON: %v", name, err)
 		}
 		if !supportedContracts[doc.ContractVersion] {
-			return nil, nil, die(3, "%s contract_version %q not supported — magma is newer/older "+
+			return nil, nil, die(ExitRefused, "%s contract_version %q not supported — magma is newer/older "+
 				"than this gate; update the gate or pin magma. NOTE there are three magma "+
 				"contracts and they are NOT interchangeable: codemap-rows/1 (row files, the only "+
 				"one this gate may accept), codemap-graph/1 (graph.json), magma-code-graph/1 "+
@@ -432,7 +444,7 @@ func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, e
 				extra = " That is a DIRTY-tree map (`<sha>+<diffhash>`); commit or stash first, " +
 					"then regenerate. Never gate on a dirty map."
 			}
-			return nil, nil, die(3, "%s sha %q != pinned %q — the map describes a different tree "+
+			return nil, nil, die(ExitRefused, "%s sha %q != pinned %q — the map describes a different tree "+
 				"than the sweep; regenerate the map at %s.%s", name, doc.SHA, pinnedSHA, pinnedSHA, extra)
 		}
 		docs[name] = &doc

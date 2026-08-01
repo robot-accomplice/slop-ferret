@@ -78,19 +78,19 @@ func pct(done, total int) *float64 {
 func Verify(planPath, dischargePath string) (*Result, int, error) {
 	pb, err := os.ReadFile(planPath)
 	if err != nil {
-		return nil, 2, die(2, "reading plan: %v", err)
+		return nil, ExitMisuse, die(ExitMisuse, "reading plan: %v", err)
 	}
 	db, err := os.ReadFile(dischargePath)
 	if err != nil {
-		return nil, 2, die(2, "reading discharge: %v", err)
+		return nil, ExitMisuse, die(ExitMisuse, "reading discharge: %v", err)
 	}
 	var pl Plan
 	if err := json.Unmarshal(pb, &pl); err != nil {
-		return nil, 2, die(2, "plan is not valid JSON: %v", err)
+		return nil, ExitMisuse, die(ExitMisuse, "plan is not valid JSON: %v", err)
 	}
 	var dis Discharge
 	if err := json.Unmarshal(db, &dis); err != nil {
-		return nil, 2, die(2, "discharge is not valid JSON: %v", err)
+		return nil, ExitMisuse, die(ExitMisuse, "discharge is not valid JSON: %v", err)
 	}
 
 	var remaining []string
@@ -304,10 +304,10 @@ func Verify(planPath, dischargePath string) (*Result, int, error) {
 	// honestly. It means "there are still items on the list", the way a test runner means "there
 	// are still failures": useful to a script, not a judgement about the person running it.
 	res.Status = "settled"
-	code := 0
+	code := ExitOK
 	if len(remaining) > 0 {
 		res.Status = "open"
-		code = 3
+		code = ExitItemsOpen
 	}
 	pctStr := ""
 	if res.Coverage.RepoPct != nil {
