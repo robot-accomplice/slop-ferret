@@ -48,17 +48,30 @@ jobs:
             echo "::error::tag ${TAG} does not match binary version ${got} (update binVersion)"
             exit 1; }
 
-      # The skill ships on its own cadence but is STAMPED at release, so a tag names an exact
-      # (binary, skill) pair. Without this the skill version is hand-maintained and can drift from
-      # the prose it labels — which is the failure the lexicon itself documents.
-      - name: Stamp and verify the embedded skill version
+      # The skill version is DATE-STYLE (YYYY-MM-DD.N) and stays that way: it labels prose that
+      # moves on its own cadence, so tying it to the binary's semver would misdescribe what it
+      # names. An earlier version of this step overwrote it with the tag, which would have
+      # silently changed the format of every recorded lexicon version.
+      #
+      # This gate does not mutate the stamp; it checks the stamp was bumped when the prose was.
+      # A version string cannot detect an edit that did not bump it -- which is precisely how two
+      # copies of the lexicon once drifted while both still declared the same version.
+      - name: Verify the skill stamp is date-style and was bumped if skill/ changed
         run: |
-          want="${TAG#v}"
-          jq --arg v "$want" '.version = $v' skill/VERSION > skill/VERSION.tmp
-          mv skill/VERSION.tmp skill/VERSION
-          got="$(go run . --version | awk '{print $6}')"
-          echo "skill stamped: ${got}"
-          [ "$want" = "$got" ] || { echo "::error::skill stamp ${got} != ${want}"; exit 1; }
+          stamp="$(go run . --version | awk '{print $6}')"
+          echo "skill stamp: ${stamp}"
+          echo "$stamp" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$' || {
+            echo "::error::skill stamp ${stamp} is not date-style YYYY-MM-DD.N"; exit 1; }
+          prev="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+          if [ -n "$prev" ]; then
+            if ! git diff --quiet "$prev" "$TAG" -- skill/; then
+              old="$(git show "$prev:skill/VERSION" | jq -r .version)"
+              echo "skill/ changed since ${prev} (stamp then: ${old})"
+              [ "$old" != "$stamp" ] || {
+                echo "::error::skill/ changed since ${prev} but the stamp is still ${stamp}"
+                exit 1; }
+            fi
+          fi
 
       - name: Cross-compile release archives
         env:
