@@ -50,8 +50,8 @@ is a spec nobody agreed to.
 | D5 | **Skill version stays date-style** (`YYYY-MM-DD.N`), never the binary's semver. | Operator. It labels prose moving on its own cadence; semver names something else. |
 | D6 | **Semver tags are published so users can pin. `@latest` remains legitimate.** | Operator. Publishing tags makes the choice available; it does not remove one. |
 | D7 | **Records store at `~/.slop-ferret/records/`.** | Operator ("seems like a good idea"). Design in §6. |
-| D8 | **A bare `ferret install` fetches the skill artifact published by the release matching its own version.** | Operator. Most users will have a release binary and no checkout, so fetching is the normal path, not the exception. Matching the binary's own version makes the install self-pinning without the user doing anything. |
-| D9 | **Slash commands stay `/slop-ferret` and `/slop-ferret:report`.** | Author's call, overturnable. They name the skill, not the binary. |
+| D8 | **A bare `ferret install` fetches from the repository.** Release artifacts are a *supported* source, not a required one. | Operator. Most users will have a release binary and no checkout, so fetching is the normal path. The repo is the default host; roboticus.ai was considered and not chosen. |
+| D9 | **Slash commands stay `/slop-ferret` and `/slop-ferret:report`.** | Operator. They name the skill, not the binary — and `/ferret` is a likelier collision in a shared command namespace than `/slop-ferret`. |
 
 ---
 
@@ -113,20 +113,23 @@ With D3 there is no compiled-in copy, so the prose is always acquired.
 
 | invocation | source | who uses it |
 |---|---|---|
-| `ferret install` | the **skill artifact from the release matching this binary's version** | the normal case: a downloaded binary, no checkout |
-| `ferret install --ref <ref>` | the repo at a ref | tracking `main`, or an older skill against a newer binary |
+| `ferret install` | **the repository**, at the ref matching this binary's version | the normal case: a downloaded binary, no checkout |
+| `ferret install --ref <ref>` | the repository at an explicit ref | tracking `main`, or an older skill against a newer binary |
 | `ferret install --from <dir>` | a checkout | development |
 
-`update` is a synonym of `install` (D4). The default is **self-pinning**: a `0.3.0` binary installs
-the `v0.3.0` skill artifact, so the prose a user gets is the prose that version was tested with,
-without them having to know a ref exists.
+`update` is a synonym of `install` (D4).
 
-**The release publishes the skill as an artifact**, checksummed alongside the binaries:
-`slop-ferret-skill_<tag>.tar.gz`. This is what makes the default work for someone who only ever
-downloads a binary, and it is versioned and checksummed rather than a live branch fetch.
+**The repository is the default host** (D8). roboticus.ai was considered and not chosen: a second
+host is a second thing that can be stale, and the repo is already where the prose lives.
+
+The default resolves the ref from the binary's own version, so a `0.3.0` binary installs the
+`v0.3.0` skill — the prose that version was tested with — without the user needing to know a ref
+exists. **Release artifacts are a supported source, not a required one:** publishing
+`slop-ferret-skill_<tag>.tar.gz` alongside the binaries gives a checksummed, versioned acquisition
+path for anyone who wants it, but the default install does not depend on that artifact existing.
 
 **Before the first release** the default has nothing to resolve. It fails with a message naming
-`--from` and `--ref`, and that message stops being reachable the moment a tag exists.
+`--from` and `--ref`; that message stops being reachable once a tag exists.
 
 **Both command entries, or neither.** `~/.claude/commands/slop-ferret/report.md` once existed while
 `/slop-ferret` did not, so the parent skill could not be invoked, so its `allowed-tools` never
@@ -220,7 +223,7 @@ Every deferral states why, in terms of risk, dependency or sequencing.
 
 | deferred | why |
 |---|---|
-| Publishing the skill release artifact | Requires the first tagged release. The `release.yml` change is small and specified in §5; it is sequencing, not uncertainty. |
+| Publishing the skill release artifact | Supported, not required (D8), and needs the first tagged release. The `release.yml` change is small and specified in §5; sequencing, not uncertainty. |
 | Consequence ranking by sink-reachability | **Belongs in magma**, which holds the graph and the types. `ferret`'s path-name signals guess semantics from names the target's own authors chose, which is why they under-enumerate silently. Cross-repo change; needs its own spec. |
 | Signature verification of fetched skill assets | Depends on the fetch path having users. Recorded in `SECURITY.md` as a known gap rather than implied to be solved. |
 | Family D / E map seeding | magma emits no `_duplicates.json` (deliberately — it has no notion of similarity, and a false duplicate row is a refactor order for code that should be left alone) and no `_interfaces.json` yet. Reported as NOT SEEDED so a missing input cannot read as a clean family. |
@@ -264,7 +267,7 @@ What already satisfies this spec, and what does not.
 
 ## 11. Open
 
-- **Nothing blocking.** D9 is an author's call and is marked overturnable.
+- **Nothing blocking.** All nine decisions are settled with the operator.
 - **Exit-code split (§7)** — proposed, not yet agreed. Found by this spec's own self-review, which
   is the first thing in this project that a design document caught before the code shipped.
 - The go/no-go ship review has not been run. Nothing here should be read as a statement that the
