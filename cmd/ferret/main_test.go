@@ -6,22 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
-	"github.com/robot-accomplice/slop-ferret/internal/install"
 )
-
-func init() {
-	// SHIM, deleted in the next task. The embed is gone (its path no longer resolves from
-	// cmd/ferret) and the real source model lands next; duplicating skill/ under cmd/ferret to
-	// keep the embed working would create a second copy of the prose, which is the drift class
-	// this tool exists to find. A shim removed one task later is the cheaper wrong.
-	install.Embedded = fstest.MapFS{
-		"skill/SKILL.md": {Data: []byte("# skill\n")},
-		"skill/VERSION":  {Data: []byte(`{"version":"2026-08-01.8"}`)},
-	}
-}
 
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
@@ -32,7 +19,7 @@ func runCLI(t *testing.T, args ...string) (int, string, string) {
 
 func TestNoArgsPrintsUsage(t *testing.T) {
 	code, _, errs := runCLI(t)
-	if code != 2 || !strings.Contains(errs, "slop-ferret") {
+	if code != gate.ExitMisuse || !strings.Contains(errs, "ferret") {
 		t.Fatalf("code=%d err=%q", code, errs)
 	}
 }
@@ -53,22 +40,12 @@ func TestVersionIsParseableByTheReleaseGate(t *testing.T) {
 			t.Fatalf("%s: code=%d", spelling, code)
 		}
 		fields := strings.Fields(out)
-		if len(fields) < 2 || fields[0] != "slop-ferret" {
-			t.Fatalf("%s: %q is not `slop-ferret <version> ...`", spelling, out)
+		if len(fields) < 2 || fields[0] != "ferret" {
+			t.Fatalf("%s: %q is not `ferret <version>`", spelling, out)
 		}
 		if fields[1] != binVersion {
 			t.Errorf("%s: field 2 = %q, want %q — release.yml reads this field",
 				spelling, fields[1], binVersion)
-		}
-		// release.yml also reads field 6 for the embedded skill stamp. Both offsets are pinned
-		// here because the release gate parses positionally: reword this line and the tag check
-		// silently starts comparing the wrong token, which is how a release stops being verified
-		// without anything going red.
-		if len(fields) < 6 {
-			t.Fatalf("%s: %q has fewer than 6 fields; release.yml reads field 6", spelling, out)
-		}
-		if want := install.SkillVersion(install.EmbeddedSource(binVersion)); fields[5] != want {
-			t.Errorf("%s: field 6 = %q, want the skill stamp %q", spelling, fields[5], want)
 		}
 	}
 }
@@ -112,7 +89,7 @@ func TestDoctorReportsNotInstalledOnACleanHome(t *testing.T) {
 func TestInstallThenDoctorRoundTrips(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if code, out, errs := runCLI(t, "install"); code != 0 {
+	if code, out, errs := runCLI(t, "install", "--from", fakeCheckout(t)); code != 0 {
 		t.Fatalf("install code=%d out=%s err=%s", code, out, errs)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "slop-ferret", "SKILL.md")); err != nil {
@@ -121,5 +98,54 @@ func TestInstallThenDoctorRoundTrips(t *testing.T) {
 	code, out, _ := runCLI(t, "doctor")
 	if code != 0 {
 		t.Fatalf("doctor after install: code=%d out=%s", code, out)
+	}
+}
+
+// A checkout stands in for the repo the default would fetch. Synthetic on purpose: these tests are
+// about DEPLOYMENT and must not start failing because someone edited the real SKILL.md.
+func fakeCheckout(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for rel, body := range map[string]string{
+		"skill/SKILL.md":                       "# skill\n",
+		"skill/VERSION":                        `{"version":"2026-08-01.8"}`,
+		"skill/commands/slop-ferret-report.md": "# report\n",
+		"skill/references/ai-slop-lexicon.md":  "# lexicon\n",
+	} {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// install and update are synonyms (D4): they differ only in whether something is already there,
+// which the tool can see for itself.
+func TestInstallAndUpdateAreSynonyms(t *testing.T) {
+	dir := fakeCheckout(t)
+	for _, verb := range []string{"install", "update"} {
+		t.Setenv("HOME", t.TempDir())
+		if code, out, errs := runCLI(t, verb, "--from", dir); code != 0 {
+			t.Fatalf("%s: code=%d out=%s err=%s", verb, code, out, errs)
+		}
+	}
+}
+
+// With no compiled-in copy and no tag to resolve, a bare install must say what to do instead of
+// silently falling back to HEAD -- that fallback is the unpinned install the default exists to avoid.
+func TestBareInstallBeforeAnyReleaseNamesTheAlternatives(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	code, _, errs := runCLI(t, "install")
+	if code == 0 {
+		t.Fatal("with no tag to resolve, a bare install must not silently succeed")
+	}
+	for _, want := range []string{"--from", "--ref"} {
+		if !strings.Contains(errs, want) {
+			t.Errorf("error must name %s: %q", want, errs)
+		}
 	}
 }

@@ -1,11 +1,10 @@
-// Command slop-ferret is the tool half of the slop-ferret method.
+// Command ferret is the tool half of the slop-ferret method.
 //
-//	slop-ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-//	slop-ferret verify <plan.json> <discharge.json>            ; 0 settled, 3 items open
-//	slop-ferret update [--ref main]                            pull the skill from the repo
-//	slop-ferret install [--from <dir>] [--force]               deploy a skill tree
-//	slop-ferret doctor                                         drift, in both directions
-//	slop-ferret version                                        binary and embedded skill versions
+//	ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
+//	ferret verify <plan.json> <discharge.json>            ; 0 settled, 3 open, 4 refused
+//	ferret install|update [--ref <r>] [--from <dir>]      acquire and deploy the skill
+//	ferret doctor                                         drift, in both directions
+//	ferret version                                        binary version
 //
 // The name is the hunter, not the quarry: this ferrets slop out, it does not produce it.
 //
@@ -31,20 +30,21 @@ import (
 // release to reach a sweep. Two artifacts, two cadences, two versions.
 const binVersion = "0.1.0"
 
-const usage = `slop-ferret — ferrets AI slop out of a repository
+const usage = `ferret — ferrets AI slop out of a repository
 
-  slop-ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-  slop-ferret verify <plan.json> <discharge.json>            0 settled, 3 items open
-  slop-ferret update [--ref main]                            pull the skill from the repo
-  slop-ferret install [--from <dir>] [--force]               deploy a skill tree into ~/.claude
-  slop-ferret doctor                                         drift, in both directions
-  slop-ferret version                                        binary + skill versions
+  ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
+  ferret verify <plan.json> <discharge.json>            0 settled · 3 items open · 4 refused
+  ferret install [--ref <ref>] [--from <dir>]           acquire the skill and deploy it
+  ferret update                                         synonym of install
+  ferret doctor                                         drift, in both directions
+  ferret version                                        binary version
 
-The skill (SKILL.md, the lexicon) ships separately from this binary and updates on its own
-cadence: ` + "`update`" + ` pulls it from the repo, ` + "`install`" + ` falls back to the copy compiled in.
+The skill (SKILL.md, the lexicon) is NOT compiled into this binary. install fetches it from the
+repository at the tag matching this binary's version; --ref tracks something else, --from reads a
+local checkout.
 
-Pairs with magma, which builds the call map ` + "`plan`" + ` reads. Run magma first; a map of a
-different tree is refused by construction.`
+Pairs with magma, which builds the call map plan reads. Run magma first; a map of a different tree
+is refused by construction.`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -55,7 +55,7 @@ func main() {
 func run(argv []string, stdout, stderr io.Writer) int {
 	if len(argv) < 1 {
 		fmt.Fprintln(stderr, usage)
-		return 2
+		return gate.ExitMisuse
 	}
 	args := argv[1:]
 	switch argv[0] {
@@ -63,21 +63,26 @@ func run(argv []string, stdout, stderr io.Writer) int {
 		return cmdPlan(args, stdout, stderr)
 	case "verify":
 		return cmdVerify(args, stdout, stderr)
-	case "update":
-		return cmdUpdate(args, stdout, stderr)
-	case "install":
+	case "install", "update": // D4: synonyms — both acquire prose and deploy it
 		return cmdInstall(args, stdout, stderr)
 	case "doctor":
-		return install.Doctor(stdout, install.EmbeddedSource(binVersion), binVersion)
-	// `--version` is spelled both ways on purpose: release.yml parses `--version` to check the tag
-	// against the binary, matching the sibling projects' release gate.
+		// doctor describes what is ON DISK, so it must work with no source at all. "I cannot reach
+		// the network" is not a reason to refuse to report the deployed copy.
+		src, cleanup, err := sourceFor(args)
+		if err != nil {
+			return install.Doctor(stdout, install.Source{}, binVersion)
+		}
+		defer cleanup()
+		return install.Doctor(stdout, src, binVersion)
+	// `--version` is spelled both ways on purpose: release.yml parses it to check the tag against
+	// the binary, matching the sibling projects' release gate. It reports only the BINARY version —
+	// the binary no longer carries prose, so it has no skill version to report (D3).
 	case "version", "--version", "-v":
-		fmt.Fprintf(stdout, "slop-ferret %s · embedded skill %s\n", binVersion,
-			install.SkillVersion(install.EmbeddedSource(binVersion)))
-		return 0
+		fmt.Fprintf(stdout, "ferret %s\n", binVersion)
+		return gate.ExitOK
 	default:
 		fmt.Fprintln(stderr, usage)
-		return 2
+		return gate.ExitMisuse
 	}
 }
 
@@ -100,41 +105,38 @@ func has(args []string, name string) bool {
 	return false
 }
 
-// cmdUpdate is the reason the skill is no longer welded to the binary: prose changes land here
-// without a rebuild.
-func cmdUpdate(args []string, stdout, stderr io.Writer) int {
-	_, ref := flagValue(args, "--ref")
-	src, cleanup, err := install.Fetch(ref)
+// sourceFor turns the flags into a Source. Order matters: an explicit --from or --ref beats the
+// default, and the default is the repository at this binary's own version (D8). There is no
+// compiled-in copy to fall back on, so every path here acquires prose from somewhere real.
+func sourceFor(args []string) (install.Source, func(), error) {
+	noop := func() {}
+	if _, dir := flagValue(args, "--from"); dir != "" {
+		s, err := install.DirSource(dir)
+		return s, noop, err
+	}
+	if _, ref := flagValue(args, "--ref"); ref != "" {
+		return install.Fetch(ref)
+	}
+	return install.DefaultSource(binVersion)
+}
+
+func cmdInstall(args []string, stdout, stderr io.Writer) int {
+	src, cleanup, err := sourceFor(args)
 	if err != nil {
-		fmt.Fprintf(stderr, "slop-ferret: %v\n", err)
-		fmt.Fprintln(stderr, "  the installed skill is untouched; `install` still works offline "+
-			"from the copy compiled in")
-		return 2
+		fmt.Fprintf(stderr, "ferret: %v\n", err)
+		fmt.Fprintln(stderr, "  the installed skill is untouched")
+		return gate.ExitMisuse
 	}
 	defer cleanup()
 	return install.Install(stdout, src, has(args, "--force"))
 }
 
-func cmdInstall(args []string, stdout, stderr io.Writer) int {
-	args, from := flagValue(args, "--from")
-	src := install.EmbeddedSource(binVersion)
-	if from != "" {
-		s, err := install.DirSource(from)
-		if err != nil {
-			fmt.Fprintf(stderr, "slop-ferret: %v\n", err)
-			return 2
-		}
-		src = s
-	}
-	return install.Install(stdout, src, has(args, "--force"))
-}
-
 func fail(err error, stderr io.Writer) int {
-	code := 2
+	code := gate.ExitMisuse
 	if e, ok := err.(*gate.Err); ok {
 		code = e.Code
 	}
-	fmt.Fprintf(stderr, "slop-ferret: %v\n", err)
+	fmt.Fprintf(stderr, "ferret: %v\n", err)
 	return code
 }
 
@@ -142,7 +144,7 @@ func cmdPlan(args []string, stdout, stderr io.Writer) int {
 	args, since := flagValue(args, "--since")
 	if len(args) != 3 {
 		fmt.Fprintln(stderr, usage)
-		return 2
+		return gate.ExitMisuse
 	}
 	p, err := gate.BuildPlan(args[0], args[1], args[2], since)
 	if err != nil {
@@ -156,7 +158,7 @@ func cmdPlan(args []string, stdout, stderr io.Writer) int {
 func cmdVerify(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 2 {
 		fmt.Fprintln(stderr, usage)
-		return 2
+		return gate.ExitMisuse
 	}
 	res, code, err := gate.Verify(args[0], args[1])
 	if err != nil {

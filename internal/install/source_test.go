@@ -157,3 +157,58 @@ func TestSkillVersionIsUnknownRatherThanEmptyWhenAbsent(t *testing.T) {
 		t.Errorf("SkillVersion = %q, want %q — a missing stamp must announce itself", got, "unknown")
 	}
 }
+
+// D3: the binary carries no prose, so the default source resolves the binary's own version to a
+// ref. A 0.3.0 binary installs the v0.3.0 skill -- the prose that version was tested with --
+// without the user needing to know a ref exists.
+func TestDefaultSourceResolvesTheBinarysOwnVersion(t *testing.T) {
+	var asked string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/commits/") {
+			asked = r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]
+			_, _ = w.Write([]byte("aaaaaaaaaaaaaaaa"))
+			return
+		}
+		_, _ = w.Write(tarball(t, "aaaaaaaaaaaaaaaa", map[string]string{
+			"skill/SKILL.md": "# s\n", "skill/VERSION": `{"version":"2026-08-01.8"}`}))
+	}))
+	defer srv.Close()
+	oldT, oldR := tarballURL, refAPIURL
+	tarballURL, refAPIURL = srv.URL+"/tar.gz/", srv.URL+"/commits/"
+	defer func() { tarballURL, refAPIURL = oldT, oldR }()
+
+	src, cleanup, err := DefaultSource("0.3.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if asked != "v0.3.0" {
+		t.Errorf("resolved ref = %q, want v0.3.0", asked)
+	}
+	if _, err := fs.ReadFile(src.FS, "skill/SKILL.md"); err != nil {
+		t.Errorf("skill not fetched: %v", err)
+	}
+}
+
+// Before the first release the default has nothing to resolve. It must say so and name the two
+// working alternatives, not fall back to HEAD -- a silent fallback is the unpinned install the
+// default exists to avoid.
+func TestDefaultSourceFailsHelpfullyWhenTheTagDoesNotExist(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	oldR := refAPIURL
+	refAPIURL = srv.URL + "/commits/"
+	defer func() { refAPIURL = oldR }()
+
+	_, _, err := DefaultSource("0.1.0")
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	for _, want := range []string{"--from", "--ref"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error must name %s: %v", want, err)
+		}
+	}
+}

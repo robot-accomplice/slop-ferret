@@ -58,7 +58,7 @@ jobs:
       # copies of the lexicon once drifted while both still declared the same version.
       - name: Verify the skill stamp is date-style and was bumped if skill/ changed
         run: |
-          stamp="$(go run ./cmd/ferret --version | awk '{print $6}')"
+          stamp="$(jq -r .version skill/VERSION)"
           echo "skill stamp: ${stamp}"
           echo "$stamp" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}\.[0-9]+$' || {
             echo "::error::skill stamp ${stamp} is not date-style YYYY-MM-DD.N"; exit 1; }
@@ -90,6 +90,10 @@ jobs:
               (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin")
             fi
           done
+          # The skill ships as its own artifact: a checksummed, versioned acquisition path for
+          # anyone who wants one. SUPPORTED, not required — `ferret install` resolves the tag from
+          # the repository and does not depend on this artifact existing (D8).
+          tar -czf "dist/slop-ferret-skill_${TAG}.tar.gz" skill
           (cd dist && sha256sum ./* > checksums.txt)
           ls -la dist
 

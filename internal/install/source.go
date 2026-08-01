@@ -210,6 +210,9 @@ func DirSource(dir string) (Source, error) {
 // SkillVersion reads the version a Source declares. Distinct from the binary's own version, and
 // that distinction is the point of this file.
 func SkillVersion(src Source) string {
+	if src.FS == nil {
+		return "unknown"
+	}
 	b, err := fs.ReadFile(src.FS, embedRoot+"/VERSION")
 	if err != nil {
 		return "unknown"
@@ -221,4 +224,21 @@ func SkillVersion(src Source) string {
 		return "unknown"
 	}
 	return v.Version
+}
+
+// DefaultSource is what a bare `ferret install` uses: the repository at the ref matching this
+// binary's own version. The install is self-pinning by construction -- a 0.3.0 binary gets the
+// v0.3.0 prose -- without the user having to know a ref exists.
+//
+// Release artifacts are a SUPPORTED source, not a required one (D8): this depends only on the tag
+// existing, not on any artifact having been published.
+func DefaultSource(binVersion string) (Source, func(), error) {
+	ref := "v" + binVersion
+	src, cleanup, err := Fetch(ref)
+	if err != nil {
+		return Source{}, func() {}, fmt.Errorf("%w\n  no skill found at %s. Before the first "+
+			"release there is no tag to resolve — use `--from <checkout>` for a local tree, or "+
+			"`--ref main` to track the branch", err, ref)
+	}
+	return src, cleanup, nil
 }

@@ -231,3 +231,20 @@ func must(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// doctor must describe what is ON DISK even with no source reachable. It once panicked on a nil FS
+// -- "I cannot reach a source" and "the deployment is broken" are different findings and the tool
+// has to be able to report the second without the first.
+func TestDoctorWorksWithNoSourceReachable(t *testing.T) {
+	home, src, out := setup(t)
+	Install(out, src, false)
+	out.Reset()
+	code := Doctor(out, Source{}, "test-bin")
+	if code != 0 {
+		t.Fatalf("doctor with no source = %d, want 0: %s", code, out)
+	}
+	if !strings.Contains(out.String(), "no source reachable") {
+		t.Errorf("must say the source was unreachable rather than imply drift: %s", out)
+	}
+	_ = home
+}
