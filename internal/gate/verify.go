@@ -24,6 +24,15 @@ type Discharge struct {
 		File   string `json:"file"`
 		Symbol string `json:"symbol"`
 	} `json:"candidates_refuted"`
+
+	// The ATTESTED half of a record (§6). All optional: a sweep that supplies none of it still
+	// verifies, it just records less for the next one to lean on.
+	Tier              string         `json:"tier"`
+	CheckedClean      []CheckedClean `json:"checked_clean"`
+	NearMisses        []string       `json:"near_misses"`
+	FindingsVerified  int            `json:"findings_verified"`
+	FindingsSuspected int            `json:"findings_suspected"`
+	ReportPath        string         `json:"report_path"`
 }
 
 type Coverage struct {
@@ -75,23 +84,55 @@ func pct(done, total int) *float64 {
 
 // Verify reports two fractions and a work queue. Every clause below was absent at some point and
 // is here because its absence was reproduced, not imagined.
-func Verify(planPath, dischargePath string) (*Result, int, error) {
+func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, error) {
 	pb, err := os.ReadFile(planPath)
 	if err != nil {
-		return nil, ExitMisuse, die(ExitMisuse, "reading plan: %v", err)
+		return nil, nil, die(ExitMisuse, "reading plan: %v", err)
 	}
 	db, err := os.ReadFile(dischargePath)
 	if err != nil {
-		return nil, ExitMisuse, die(ExitMisuse, "reading discharge: %v", err)
+		return nil, nil, die(ExitMisuse, "reading discharge: %v", err)
 	}
 	var pl Plan
 	if err := json.Unmarshal(pb, &pl); err != nil {
-		return nil, ExitMisuse, die(ExitMisuse, "plan is not valid JSON: %v", err)
+		return nil, nil, die(ExitMisuse, "plan is not valid JSON: %v", err)
 	}
 	var dis Discharge
 	if err := json.Unmarshal(db, &dis); err != nil {
-		return nil, ExitMisuse, die(ExitMisuse, "discharge is not valid JSON: %v", err)
+		return nil, nil, die(ExitMisuse, "discharge is not valid JSON: %v", err)
 	}
+	return &pl, &dis, nil
+}
+
+// VerifyAndRecord runs Verify and, unless suppressed, persists a record.
+//
+// Always-write with an opt-out, deliberately: a record you must remember to request is one that
+// will not exist when the next sweep looks for it, and the whole point of the store is that Step
+// 0.2 finds something.
+func VerifyAndRecord(planPath, dischargePath, repo string, record bool) (*Result, string, int, error) {
+	res, code, err := Verify(planPath, dischargePath)
+	if err != nil || !record || repo == "" {
+		return res, "", code, err
+	}
+	pl, dis, lerr := loadPlanAndDischarge(planPath, dischargePath)
+	if lerr != nil {
+		return res, "", code, nil
+	}
+	path, werr := WriteRecord(repo, pl, dis, res)
+	if werr != nil {
+		// A record that cannot be written must not silently vanish, but it also must not discard a
+		// verify result the operator already earned. Surface it and keep the result.
+		return res, "", code, fmt.Errorf("record: %w", werr)
+	}
+	return res, path, code, nil
+}
+
+func Verify(planPath, dischargePath string) (*Result, int, error) {
+	plp, disp, err := loadPlanAndDischarge(planPath, dischargePath)
+	if err != nil {
+		return nil, ExitMisuse, err
+	}
+	pl, dis := *plp, *disp
 
 	var remaining []string
 

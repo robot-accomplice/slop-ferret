@@ -149,3 +149,28 @@ func TestBareInstallBeforeAnyReleaseNamesTheAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// verify without a repo argument records nothing and is not an error: an absent repo is a narrower
+// invocation, not a mistake.
+func TestVerifyWithoutARepoStillVerifies(t *testing.T) {
+	if code, _, _ := runCLI(t, "verify", "only-one"); code != gate.ExitMisuse {
+		t.Fatal("verify still needs at least plan and discharge")
+	}
+}
+
+func TestRecordsRejectsWrongArity(t *testing.T) {
+	if code, _, _ := runCLI(t, "records"); code != gate.ExitMisuse {
+		t.Fatal("records needs a repo")
+	}
+}
+
+func TestRecordsOnAnUnsweptRepoPrintsNothingAndSucceeds(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	code, out, _ := runCLI(t, "records", t.TempDir())
+	if code != gate.ExitOK {
+		t.Fatalf("code=%d, want 0 — an unswept repo is a normal state", code)
+	}
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("want no output, got %q", out)
+	}
+}

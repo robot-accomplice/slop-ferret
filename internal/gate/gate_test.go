@@ -567,3 +567,19 @@ func TestARefusalAndAnUnfinishedSweepUseDifferentExitCodes(t *testing.T) {
 		t.Fatalf("unfinished sweep exit = %d, want ExitItemsOpen (%d)", c, ExitItemsOpen)
 	}
 }
+
+func run(t *testing.T, repo string, args ...string) {
+	t.Helper()
+	if out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v %s", args, err, out)
+	}
+}
+
+func headSHA(t *testing.T, repo string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}

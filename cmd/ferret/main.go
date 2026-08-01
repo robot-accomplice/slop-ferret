@@ -33,7 +33,8 @@ const binVersion = "0.1.0"
 const usage = `ferret — ferrets AI slop out of a repository
 
   ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-  ferret verify <plan.json> <discharge.json>            0 settled · 3 items open · 4 refused
+  ferret verify <plan.json> <discharge.json> [<repo>]   0 settled · 3 items open · 4 refused
+  ferret records <repo>                                 prior sweeps, newest first
   ferret install [--ref <ref>] [--from <dir>]           acquire the skill and deploy it
   ferret update                                         synonym of install
   ferret doctor                                         drift, in both directions
@@ -65,6 +66,24 @@ func run(argv []string, stdout, stderr io.Writer) int {
 		return cmdVerify(args, stdout, stderr)
 	case "install", "update": // D4: synonyms — both acquire prose and deploy it
 		return cmdInstall(args, stdout, stderr)
+	case "records":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, usage)
+			return gate.ExitMisuse
+		}
+		recs, err := gate.ListRecords(args[0])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		for _, r := range recs {
+			sha := r.SHA
+			if len(sha) > 12 {
+				sha = sha[:12]
+			}
+			fmt.Fprintf(stdout, "%s  %s  repo %s  plan %s  %s\n",
+				r.Date, sha, r.CoverageRepo, r.CoveragePlan, r.Status)
+		}
+		return gate.ExitOK
 	case "doctor":
 		// doctor describes what is ON DISK, so it must work with no source at all. "I cannot reach
 		// the network" is not a reason to refuse to report the deployed copy.
@@ -156,15 +175,37 @@ func cmdPlan(args []string, stdout, stderr io.Writer) int {
 }
 
 func cmdVerify(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 2 {
+	record := !has(args, "--no-record")
+	args = without(args, "--no-record")
+	// The third positional is the swept repo. Without it there is nothing to key a record by and
+	// nothing to resolve the sha against, so verify still runs and simply records nothing — an
+	// absent repo is a narrower invocation, not a mistake.
+	if len(args) != 2 && len(args) != 3 {
 		fmt.Fprintln(stderr, usage)
 		return gate.ExitMisuse
 	}
-	res, code, err := gate.Verify(args[0], args[1])
+	repo := ""
+	if len(args) == 3 {
+		repo = args[2]
+	}
+	res, path, code, err := gate.VerifyAndRecord(args[0], args[1], repo, record)
 	if err != nil {
 		return fail(err, stderr)
 	}
 	b, _ := json.MarshalIndent(res, "", " ")
 	fmt.Fprintln(stdout, string(b))
+	if path != "" {
+		fmt.Fprintf(stderr, "recorded: %s\n", path)
+	}
 	return code
+}
+
+func without(args []string, flag string) []string {
+	out := args[:0:0]
+	for _, a := range args {
+		if a != flag {
+			out = append(out, a)
+		}
+	}
+	return out
 }
