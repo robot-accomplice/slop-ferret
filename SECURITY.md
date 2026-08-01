@@ -28,9 +28,10 @@ Worth stating plainly, because the surface is wider than a linter's:
 
 ## Install integrity
 
-`@latest` resolves to whatever `HEAD` happens to be, which in the current supply-chain environment
-means installing an unreviewed commit by default. **Pin a semver tag.** Release archives are
-published with SHA-256 checksums; verify them before running a downloaded binary.
+`@latest` resolves to whatever `HEAD` happens to be at install time; a semver tag resolves to a
+fixed, reviewable commit. Both are supported — **pinning is recommended**, and semver tags are
+published so that anyone who prefers to pin can. Release archives carry SHA-256 checksums; verify
+them before running a downloaded binary.
 
 ## Known gaps
 

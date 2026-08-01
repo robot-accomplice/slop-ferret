@@ -4,9 +4,10 @@ name: Release
 # the tag matches the binary's reported version AND the embedded skill's stamp, cross-compiles every
 # target from one runner (pure Go), and publishes a GitHub Release with checksummed archives.
 #
-# Tags are the ONLY supported install path. `@latest` resolves to whatever HEAD happens to be, which
-# in the current supply-chain environment means installing an unreviewed commit by default — so the
-# README pins a version and this workflow is what makes a pinned version exist.
+# Publishing semver tags is what makes pinning POSSIBLE. `@latest` is a legitimate install path and
+# stays supported; a pinned tag resolves to a fixed, reviewable commit, which is what we prefer for
+# things we depend on and what others tend to prefer too. This workflow exists so that choice is
+# available rather than to remove one.
 on:
   push:
     tags: ["v*"]

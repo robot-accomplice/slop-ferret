@@ -34,15 +34,16 @@ does — and no amount of Go will do it.
 
 ## Install
 
-**Pin a version.** `@latest` resolves to whatever `HEAD` happens to be, which means installing an
-unreviewed commit by default:
+Both paths work. **Pinning is recommended** — a pinned version is reproducible and reviewable, and
+publishing semver tags exists so that anyone who prefers to pin can:
 
 ```bash
-go install github.com/robot-accomplice/slop-ferret@v0.1.0   # no tag published yet — see Status
+go install github.com/robot-accomplice/slop-ferret@v0.1.0    # pinned (recommended)
+go install github.com/robot-accomplice/slop-ferret@latest    # tracks HEAD
 slop-ferret install
 ```
 
-Until a tag exists, build from source:
+No tag is published yet, so today that means `@latest` or a source build:
 
 ```bash
 git clone https://github.com/robot-accomplice/slop-ferret.git
@@ -166,9 +167,9 @@ Requires Go 1.26 and [`just`](https://github.com/casey/just); `golangci-lint` fo
 
 ## Releasing
 
-Tags are the only supported install path. Pushing a semver tag re-runs the CI gates, verifies the
-tag matches the binary version **and** stamps the embedded skill, cross-compiles every target, and
-publishes a GitHub Release with checksummed archives.
+Tags exist so that users who want to pin can. Pushing a semver tag re-runs the CI gates, verifies
+the tag matches the binary version **and** stamps the embedded skill, cross-compiles every target,
+and publishes a GitHub Release with checksummed archives.
 
 ### Release checklist
 
