@@ -68,11 +68,25 @@ func recordsRoot() (string, error) {
 	return filepath.Join(home, ".slop-ferret", "records"), nil
 }
 
-// RepoKey identifies a repository stably across checkouts. The result is SAFE BY CONSTRUCTION —
+// RepoKey derives the records-store key for a repository. The result is SAFE BY CONSTRUCTION —
 // it is reduced to plain path segments here rather than at the call site, because it is exported
 // and derived from the AUDITED repository's origin URL. The origin URL is preferred because a
 // path changes when the tree moves and the records would then look like a different repo's; the
 // hash fallback keeps remoteless repos usable rather than unrecordable.
+//
+// IT IS NOT A STABLE IDENTITY, and two KNOWN OPEN defects follow from that (ABORT II, A2):
+//
+//  1. It is not stable. The operator's own store holds `Users/jmachen/code/slop-ferret/` and
+//     `github.com/robot-accomplice/slop-ferret/` — one repository, two keys, disjoint histories,
+//     because `origin` differed between runs.
+//  2. It is target-asserted. `origin` is an unauthenticated string the audited repo controls, so
+//     any fork can write `checked_clean` claims into the upstream's directory, which SKILL.md
+//     Step 0.2 then tells the next sweep not to re-spend budget on. `cat-file -e` binds nothing:
+//     a fork contains the upstream's commits by definition.
+//
+// Fixing this needs an identity the target cannot assert, plus the observed origin stored INSIDE
+// the record so a disagreeing key can be refused. Until then, treat a record's provenance as a
+// hint, not a fact.
 func RepoKey(repo string) (string, error) {
 	out, err := gitLines(repo, "remote", "get-url", "origin")
 	if err == nil && len(out) > 0 {

@@ -1,0 +1,305 @@
+{
+  "contract_version": "codemap-rows/1",
+  "generator": "magma/0.2.0",
+  "sha": "7e5f0d6d",
+  "tree": "7e5f0d6d",
+  "fidelity": "semantic",
+  "reachability_computable": true,
+  "rows": [
+    {
+      "symbol": "default_requested_authority",
+      "file": "crates/roboticus-agent/src/approvals.rs",
+      "line": 46
+    },
+    {
+      "symbol": "\u003cTestInMemoryMcpServer as ServerHandler\u003e::call_tool",
+      "file": "crates/roboticus-agent/src/mcp/client.rs",
+      "line": 387
+    },
+    {
+      "symbol": "\u003cTestInMemoryMcpServer as ServerHandler\u003e::get_tool",
+      "file": "crates/roboticus-agent/src/mcp/client.rs",
+      "line": 387
+    },
+    {
+      "symbol": "\u003cTestInMemoryMcpServer as ServerHandler\u003e::list_tools",
+      "file": "crates/roboticus-agent/src/mcp/client.rs",
+      "line": 387
+    },
+    {
+      "symbol": "\u003cTestInMemoryMcpServer as ServerHandler\u003e::get_info",
+      "file": "crates/roboticus-agent/src/mcp/client.rs",
+      "line": 389
+    },
+    {
+      "symbol": "default_max_concurrent",
+      "file": "crates/roboticus-agent/src/subagents.rs",
+      "line": 44
+    },
+    {
+      "symbol": "ENV_MUTEX#init",
+      "file": "crates/roboticus-agent/src/test_support.rs",
+      "line": 4
+    },
+    {
+      "symbol": "default_embedding_status",
+      "file": "crates/roboticus-agent/src/tool_search.rs",
+      "line": 135
+    },
+    {
+      "symbol": "\u003cAbuseConfig as Default\u003e::default",
+      "file": "crates/roboticus-api/src/abuse.rs",
+      "line": 98
+    },
+    {
+      "symbol": "default_dead_letter_limit",
+      "file": "crates/roboticus-api/src/api/routes/channels.rs",
+      "line": 351
+    },
+    {
+      "symbol": "\u003cInterviewSession as Default\u003e::default",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 338
+    },
+    {
+      "symbol": "\u003cAppState as PipelineTooling\u003e::policy_engine",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 516
+    },
+    {
+      "symbol": "\u003cAppState as PipelineTooling\u003e::approvals",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 519
+    },
+    {
+      "symbol": "\u003cAppState as PipelineTooling\u003e::registry",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 522
+    },
+    {
+      "symbol": "\u003cAppState as PipelineTooling\u003e::plugins",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 525
+    },
+    {
+      "symbol": "\u003cAppState as PipelineExecution\u003e::keystore",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 537
+    },
+    {
+      "symbol": "\u003cAppState as PipelineExecution\u003e::oauth",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 540
+    },
+    {
+      "symbol": "\u003cAppState as PipelineExecution\u003e::live_mcp",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 543
+    },
+    {
+      "symbol": "\u003cAppState as PipelineExecution\u003e::mcp_clients",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 546
+    },
+    {
+      "symbol": "\u003cAppState as PipelineExecution\u003e::browser",
+      "file": "crates/roboticus-api/src/api/routes/mod.rs",
+      "line": 549
+    },
+    {
+      "symbol": "default_retirement_min_age",
+      "file": "crates/roboticus-api/src/api/routes/subagents.rs",
+      "line": 621
+    },
+    {
+      "symbol": "default_audio_volume",
+      "file": "crates/roboticus-api/src/api/routes/themes.rs",
+      "line": 317
+    },
+    {
+      "symbol": "TEST_NONCE#init",
+      "file": "crates/roboticus-api/src/dashboard.rs",
+      "line": 91
+    },
+    {
+      "symbol": "\u003cTicketStore as Default\u003e::default",
+      "file": "crates/roboticus-api/src/ws_ticket.rs",
+      "line": 54
+    },
+    {
+      "symbol": "\u003cAgentBrowserConfig as Default\u003e::default",
+      "file": "crates/roboticus-browser/src/agent_browser_backend.rs",
+      "line": 24
+    },
+    {
+      "symbol": "\u003cImapXoauth2Auth as Authenticator\u003e::process",
+      "file": "crates/roboticus-channels/src/email.rs",
+      "line": 599
+    },
+    {
+      "symbol": "deserialize_cron",
+      "file": "crates/roboticus-cli/src/migrate/transform/mod.rs",
+      "line": 62
+    },
+    {
+      "symbol": "\u003cConfigFileError as Display\u003e::fmt",
+      "file": "crates/roboticus-core/src/config_utils.rs",
+      "line": 24
+    },
+    {
+      "symbol": "\u003cDelegationError as Display\u003e::fmt",
+      "file": "crates/roboticus-core/src/delegation_error.rs",
+      "line": 49
+    },
+    {
+      "symbol": "MACHINE_ID_MUTEX#init",
+      "file": "crates/roboticus-core/src/keystore.rs",
+      "line": 689
+    },
+    {
+      "symbol": "default_empty_rules",
+      "file": "crates/roboticus-core/src/personality.rs",
+      "line": 90
+    },
+    {
+      "symbol": "default_version",
+      "file": "crates/roboticus-core/src/types.rs",
+      "line": 157
+    },
+    {
+      "symbol": "default_author",
+      "file": "crates/roboticus-core/src/types.rs",
+      "line": 161
+    },
+    {
+      "symbol": "\u003cEmbeddingPoint as Point\u003e::distance",
+      "file": "crates/roboticus-db/src/ann.rs",
+      "line": 29
+    },
+    {
+      "symbol": "cosine_sim_f32",
+      "file": "crates/roboticus-db/src/ann.rs",
+      "line": 34
+    },
+    {
+      "symbol": "\u003cLlmClient as Debug\u003e::fmt",
+      "file": "crates/roboticus-llm/src/client.rs",
+      "line": 44
+    },
+    {
+      "symbol": "default_speed",
+      "file": "crates/roboticus-llm/src/profile.rs",
+      "line": 69
+    },
+    {
+      "symbol": "\u003cProviderRegistry as Default\u003e::default",
+      "file": "crates/roboticus-llm/src/provider.rs",
+      "line": 120
+    },
+    {
+      "symbol": "NGRAM_THRESHOLD#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 35
+    },
+    {
+      "symbol": "SPECIALIST_THRESHOLD#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 38
+    },
+    {
+      "symbol": "MUST_MATCH#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 60
+    },
+    {
+      "symbol": "MUST_NOT_MATCH#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 179
+    },
+    {
+      "symbol": "SOFT_EXPECTATIONS#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 272
+    },
+    {
+      "symbol": "GUARD_MUST_MATCH#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 345
+    },
+    {
+      "symbol": "GUARD_NEEDS_NEURAL#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 364
+    },
+    {
+      "symbol": "GUARD_MUST_NOT_MATCH#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 376
+    },
+    {
+      "symbol": "SPECIALIST_MUST_MATCH_NGRAM#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 521
+    },
+    {
+      "symbol": "SPECIALIST_MUST_MATCH_NEURAL#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 529
+    },
+    {
+      "symbol": "SPECIALIST_MUST_NOT_MATCH#init",
+      "file": "crates/roboticus-llm/src/semantic_classifier_corpus.rs",
+      "line": 534
+    },
+    {
+      "symbol": "default_tier",
+      "file": "crates/roboticus-plugin-sdk/src/catalog.rs",
+      "line": 31
+    },
+    {
+      "symbol": "default_tool_risk_level",
+      "file": "crates/roboticus-plugin-sdk/src/lib.rs",
+      "line": 48
+    },
+    {
+      "symbol": "MAX_HEARTBEAT_INTERVAL_MS#init",
+      "file": "crates/roboticus-schedule/src/heartbeat.rs",
+      "line": 591
+    },
+    {
+      "symbol": "MIN_HEARTBEAT_INTERVAL_MS#init",
+      "file": "crates/roboticus-schedule/src/heartbeat.rs",
+      "line": 592
+    },
+    {
+      "symbol": "BOOTSTRAP_CONFIG#init",
+      "file": "crates/roboticus-server/src/lib.rs",
+      "line": 1469
+    },
+    {
+      "symbol": "ENV_MUTEX#init",
+      "file": "crates/roboticus-server/src/test_support.rs",
+      "line": 4
+    },
+    {
+      "symbol": "INJECTION_CORPUS#init",
+      "file": "crates/roboticus-tests/src/injection_defense.rs",
+      "line": 6
+    },
+    {
+      "symbol": "INJECTION_STRINGS#init",
+      "file": "crates/roboticus-tests/src/injection_defense.rs",
+      "line": 95
+    },
+    {
+      "symbol": "TEST_CONFIG_TOML#init",
+      "file": "crates/roboticus-tests/src/parity.rs",
+      "line": 31
+    },
+    {
+      "symbol": "MINIMAL_TOML#init",
+      "file": "crates/roboticus-wallet/src/lib.rs",
+      "line": 67
+    }
+  ]
+}

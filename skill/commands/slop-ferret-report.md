@@ -36,9 +36,9 @@ denominator or the tier is the failure this command exists to prevent.
 
 ## Required content, in this order
 
-1. **Coverage banner** — BOTH fractions, each beside its denominator: `coverage.repo` (source files
-   read) and `coverage.plan` (items dispositioned), plus what remains open. Never one fraction alone:
-   a reader who sees a full `coverage.plan` by itself will read it as "the repo was covered", which is
+1. **Coverage banner** — BOTH fractions, each beside its denominator: `attested.repo` (source files
+   read) and `attested.plan` (items dispositioned), plus what remains open. Never one fraction alone:
+   a reader who sees a full `attested.plan` by itself will read it as "the repo was covered", which is
    the mistake the retired verdict word institutionalised. If they disagree, say so in words. The
    deferred family-H path count **in the banner itself**. This is the headline, not the finding count,
    and the deferred number does not go in a caveat on another line — coverage the reader has to assemble

@@ -249,7 +249,7 @@ func Enumerate(planPath, dischargePath string) (*Result, int, error) {
 			"still unread. A signal miss is not a clearance — nothing has looked at them yet, so "+
 			"they are the natural next place to spend time. Read what is worth reading and waive "+
 			"the rest in `coverage_waived` (a reason is optional; waived counts as unread in "+
-			"`coverage.repo`, which is the point)", len(undispositioned)))
+			"`attested.repo`, which is the point)", len(undispositioned)))
 	}
 	if len(unread) > 0 {
 		remaining = append(remaining, fmt.Sprintf("%d REQUIRED family-H path(s) unattested: the "+

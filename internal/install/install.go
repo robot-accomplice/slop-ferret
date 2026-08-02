@@ -41,8 +41,15 @@ const (
 	manifestName = ".slop-install.json"
 )
 
-// Both entries, always, together. Installing one and not the other IS the original defect, so
-// they are one table and there is no code path that writes a subset.
+// Both entries, always, together. Installing one and not the other IS the original defect.
+//
+// KNOWN OPEN (ABORT II, A1): they are one table, but there ARE code paths that write a subset.
+// The pre-flight below catches only a non-symlink AT the link path; any other relink failure
+// still lands after the tree is on disk. Reproduced 20/20 with `~/.claude/commands/slop-ferret`
+// present as a regular file (ENOTDIR defeats the pre-flight's Lstat) and with `commands/`
+// read-only: 14/20 left `/slop-ferret` linked and `/slop-ferret:report` missing, 6/20 left
+// neither, and every run deployed the full tree with no manifest. Until this is stage-and-swap,
+// do not read the pre-flight as covering the class — it covers one instance of it.
 var commands = map[string]string{
 	"slop-ferret.md":        "SKILL.md",
 	"slop-ferret/report.md": "commands/slop-ferret-report.md",

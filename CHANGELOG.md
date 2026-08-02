@@ -6,14 +6,17 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
 
 ## [Unreleased]
 
-**Nothing is released, and no go/no-go review has been run.**
+**Nothing is released. Two go/no-go ship reviews have been run and both returned NO-GO** — see
+[`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md) for the first. The second (five
+stations, 2026-08-02) found the remediation for the first had not bound: the tests written to pin
+its two headline defects both still passed under mutation of those exact defects.
 
 ### Added
-- **Sweep records** — `ferret verify … <repo>` writes `~/.slop-ferret/records/<repo>/<sha>.json`;
+- **Sweep records** — `ferret enumerate … <repo>` writes `~/.slop-ferret/records/<repo>/<sha>.json`;
   `ferret records <repo>` reads them back. Carries checked-clean *with the method used*, and
   refuses a sha that does not resolve.
-- `plan` / `verify` — the coded seam between a magma code map and a sweep. Reports two coverage
-  fractions (`coverage.repo`, `coverage.plan`) and a work queue.
+- `plan` / `enumerate` — the coded seam between a magma code map and a sweep. Reports two coverage
+  fractions (`attested.repo`, `attested.plan`) and a work queue.
 - `h_unmatched` — the complement of the signal-matched worklist. Every production file is raised;
   signals only rank. Closes the gap where a file no signal reached was indistinguishable from a
   file that had been cleared.

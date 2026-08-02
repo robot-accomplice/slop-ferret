@@ -24,7 +24,7 @@ The name is the hunter, not the quarry.
 > Five independent red-team stations all voted against shipping. Read
 > [`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md) before relying on anything below.
 >
-> The headline reason: **`coverage.repo` is computed from a self-reported list of files and nothing
+> The headline reason: **`attested.repo` is computed from a self-reported list of files and nothing
 > corroborates it.** It is not a measurement of what was read. Treat every number this tool emits as
 > a claim by whoever ran it, not as evidence.
 
@@ -84,8 +84,8 @@ ferret enumerate plan.json discharge.json             # 0 settled · 3 items ope
 ### Two fractions, no verdict word
 
 ```
-coverage.repo   production source files read / total     "was the repo covered"
-coverage.plan   items dispositioned / items raised       "was the plan worked through"
+attested.repo   production source files read / total     "was the repo covered"
+attested.plan   items dispositioned / items raised       "was the plan worked through"
 ```
 
 They are different numbers and **the gap between them is the point**. A
@@ -106,7 +106,7 @@ covered, because that is a fraction and a fraction does not fit in a byte.
 
 ### Waivers
 
-A waiver settles the accounting and **does not** raise `coverage.repo`. Deciding not to read a file
+A waiver settles the accounting and **does not** raise `attested.repo`. Deciding not to read a file
 is a normal, correct move and costs nothing to record — but a waived file genuinely was not read,
 and the fraction exists to tell you what you actually looked at. No coverage floor is enforced:
 there is no defensible number, and a red build for reading 67% instead of 90% would only teach you

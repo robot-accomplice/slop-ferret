@@ -38,8 +38,20 @@ type Finding struct {
 	Occurrences int    `json:"occurrences"`
 }
 
-// Input is everything the page needs. Attested/accounting figures come from `enumerate` so the
-// report cannot disagree with the tool that produced them.
+// Input is everything the page needs.
+//
+// EVERY FIELD IS MODEL-SUPPLIED AND NOTHING VALIDATES IT (ABORT II, KNOWN OPEN). An earlier
+// version of this comment claimed the attested/accounting figures "come from `enumerate` so the
+// report cannot disagree with the tool that produced them". That was false in two directions:
+// `cmd/ferret report` reads one JSON file and never opens the plan, the discharge, the enumerate
+// result or the record; and the field names never matched — `enumerate` emits a nested
+// `attested: {repo, plan}` while this struct reads flat `attested_repo` / `attested_plan`, so
+// piping one into the other renders a page with blank fractions. The seam has never carried a
+// byte, and no test exercised ParseInput at all.
+//
+// Until `report` derives these from `Enumerate` itself, the page is a rendering of what the
+// auditor typed. That is why the template says so on its face; it is not a substitute for the
+// binding.
 type Input struct {
 	Repo         string    `json:"repo"`
 	SHA          string    `json:"sha"`

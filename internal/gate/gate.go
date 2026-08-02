@@ -19,8 +19,8 @@
 //
 // `verify` reports TWO FRACTIONS and no verdict word:
 //
-//	coverage.repo  production source files read / total    <- "was the repo covered"
-//	coverage.plan  items dispositioned / items raised      <- "was the plan worked through"
+//	attested.repo  production source files read / total    <- "was the repo covered"
+//	attested.plan  items dispositioned / items raised      <- "was the plan worked through"
 //
 // COMPLETE/PARTIAL/INCOMPLETE were removed because one token cannot carry two quantities.
 // Measured on ghola @4f33b3c: 10/10 on the plan, 17/25 on the repo, reported COMPLETE — while the
@@ -468,7 +468,7 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"candidates_refuted:[{file,symbol}]} and run `ferret enumerate`. `coverage_waived` entries may be " +
 	"a bare path or {path, reason} — a reason is OPTIONAL. Waiving is cheap on purpose: deciding " +
 	"not to read a file is a normal, correct move and should cost nothing. It settles the " +
-	"ACCOUNTING and leaves `coverage.repo` alone, because a waived file genuinely was not read " +
+	"ACCOUNTING and leaves `attested.repo` alone, because a waived file genuinely was not read " +
 	"and the fraction is there to tell YOU what you actually looked at. No coverage floor is " +
 	"enforced: there is no defensible number, and a red build for reading 67% instead of 90% " +
 	"would only teach you to waive to clear it. `sha` must equal this plan's sha. " +

@@ -303,7 +303,7 @@ func TestReadingEverythingSettlesAndFillsBothFractions(t *testing.T) {
 		t.Fatalf("code=%d status=%s remaining=%v", c, res.Accounting, res.Remaining)
 	}
 	if res.Attested.Repo != "2/2" {
-		t.Errorf("coverage.repo = %s, want 2/2", res.Attested.Repo)
+		t.Errorf("attested.repo = %s, want 2/2", res.Attested.Repo)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestAWaiverSettlesTheItemAndDoesNotRaiseRepoCoverage(t *testing.T) {
 		t.Fatalf("a waiver must settle the accounting: %v", res.Remaining)
 	}
 	if res.Attested.Repo != "1/2" {
-		t.Errorf("coverage.repo = %s, want 1/2 — a waived file must still count as UNREAD",
+		t.Errorf("attested.repo = %s, want 1/2 — a waived file must still count as UNREAD",
 			res.Attested.Repo)
 	}
 	if res.Attested.Waived != 1 {
@@ -347,7 +347,7 @@ func TestAWaiverMayCarryAnOptionalReason(t *testing.T) {
 		t.Fatalf("remaining=%v", res.Remaining)
 	}
 	if res.Attested.Repo != "1/2" {
-		t.Errorf("coverage.repo = %s", res.Attested.Repo)
+		t.Errorf("attested.repo = %s", res.Attested.Repo)
 	}
 }
 
@@ -819,18 +819,40 @@ func TestTheTierSplitIsReDerivableFromAFixture(t *testing.T) {
 	}
 }
 
-// hDeferFloor is a judgement, but its EFFECT is testable: at or below it, nothing is deferred.
-func TestBelowTheDeferFloorNothingIsDeferred(t *testing.T) {
+// hDeferFloor is a judgement, but its EFFECT is testable, and this test PINS IT FROM BELOW.
+//
+// The previous version built 10 files and called `t.Skip("fixture unexpectedly large")` whenever
+// the worklist exceeded the floor — so lowering the floor made the test skip itself out of
+// existence rather than fail. Verified by mutation on 2026-08-02: hDeferFloor 60 -> 5 left the
+// whole suite green, which is the exact defect the fixture's own header claims to have closed.
+// A test that opts out precisely when its constant moves is indistinguishable from no test.
+//
+// 50 paths, deliberately mixed 30 tier-1 / 20 tier-2 so that a split WOULD be visible if one
+// engaged. At the real floor nothing defers. Lower the floor under 50 and the 20 tier-2 paths
+// move to deferred and this fails. TestTheTierSplitIsReDerivableFromAFixture pins the other end
+// at 70, so the floor is bracketed rather than bounded on one side only.
+func TestLoweringTheDeferFloorIsCaught(t *testing.T) {
+	const below = 50
 	files := map[string]string{}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 30; i++ {
 		files[fmt.Sprintf("internal/wallet/pay%02d.go", i)] = "package x\n"
 	}
+	for i := 0; i < 20; i++ {
+		files[fmt.Sprintf("internal/client/download%02d.go", i)] = "package x\n"
+	}
 	p := planFor(t, gitRepo(t, files))
-	if len(p.HWorklist) > hDeferFloor {
-		t.Skip("fixture unexpectedly large")
+	if len(p.HWorklist) != below {
+		t.Fatalf("fixture matched %d paths, expected %d — the signals moved, so this test no "+
+			"longer measures the floor", len(p.HWorklist), below)
+	}
+	if below > hDeferFloor {
+		t.Fatalf("hDeferFloor is %d, at or below this fixture's %d paths: the floor has been "+
+			"lowered far enough that a 50-path repo now defers work. The floor exists so that a "+
+			"worklist small enough to read in full IS read in full — re-derive it deliberately "+
+			"rather than lowering it to make a sweep finish sooner", hDeferFloor, below)
 	}
 	if len(p.HDeferred) != 0 || len(p.HRequired) != len(p.HWorklist) {
-		t.Errorf("at or below the floor everything is required: %d/%d",
+		t.Errorf("at or below the floor everything is required: %d required / %d deferred",
 			len(p.HRequired), len(p.HDeferred))
 	}
 }

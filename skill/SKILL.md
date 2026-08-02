@@ -217,8 +217,8 @@ production source file — and it is enumerated too.** A signal match is a RANKI
 gate: matching nothing no longer means a file is absent from the sweep, it means nobody has looked at
 it yet.
 
-**`verify` reports two fractions and no verdict word.** `coverage.repo` is production source files
-read over the total; `coverage.plan` is items dispositioned over items raised. They are different
+**`verify` reports two fractions and no verdict word.** `attested.repo` is production source files
+read over the total; `attested.plan` is items dispositioned over items raised. They are different
 numbers, and the gap between them is the point. Exit 0 means the accounting is settled and 3 means
 items are still open — bookkeeping only, the way a test runner reports outstanding failures. **Carry
 BOTH fractions into the report banner**, not one of them and not a word.
@@ -491,7 +491,7 @@ unvalidated-language one**, and never let a structural zero enter a cross-repo t
 **Name the tell if it applies.** A sweep reporting SUSPECTED findings with **zero VERIFIED** has verified
 nothing — say that on the face of the report rather than letting a `Rate: 0.0` read as a clean result.
 Likewise a settled accounting over a tier that skipped families is settled *for that tier*, and must say
-which. **A high `coverage.plan` beside a low `coverage.repo` means the enumeration was narrow, not that
+which. **A high `attested.plan` beside a low `attested.repo` means the enumeration was narrow, not that
 the repo is clean** — say that in words when the two disagree, because a reader who sees one full
 fraction will generalise from it.
 
@@ -516,8 +516,8 @@ same way every time.
 record; the report is what a maintainer actually reads, and it is the only artifact that shows coverage,
 calibration and near-misses together.
 
-It must carry, in this order: **both coverage fractions in the banner** — `coverage.repo` and
-`coverage.plan`, each with its denominator, and never one without the other; **what was and was not covered** before
+It must carry, in this order: **both coverage fractions in the banner** — `attested.repo` and
+`attested.plan`, each with its denominator, and never one without the other; **what was and was not covered** before
 any result; findings **severity-first, never volume-first** (count runs inverse to severity — the largest
 class in the first campaign was 7,022 occurrences and cosmetic); VERIFIED and SUSPECTED **visually**
 distinct rather than captioned; every rate beside its denominator, with the rate suppressed below ~100

@@ -1,0 +1,115 @@
+{
+  "contract_version": "codemap-rows/1",
+  "generator": "magma/0.2.0",
+  "sha": "7e5f0d6d",
+  "tree": "7e5f0d6d",
+  "fidelity": "semantic",
+  "reachability_computable": true,
+  "rows": [
+    {
+      "symbol": "default_memory_limit",
+      "file": "crates/roboticus-agent/src/wasm.rs",
+      "line": 22
+    },
+    {
+      "symbol": "default_execution_timeout_ms",
+      "file": "crates/roboticus-agent/src/wasm.rs",
+      "line": 25
+    },
+    {
+      "symbol": "default_role",
+      "file": "crates/roboticus-api/src/api/routes/subagents.rs",
+      "line": 40
+    },
+    {
+      "symbol": "default_model",
+      "file": "crates/roboticus-api/src/api/routes/subagents.rs",
+      "line": 44
+    },
+    {
+      "symbol": "default_true",
+      "file": "crates/roboticus-api/src/api/routes/subagents.rs",
+      "line": 47
+    },
+    {
+      "symbol": "default_version",
+      "file": "crates/roboticus-core/src/personality.rs",
+      "line": 53
+    },
+    {
+      "symbol": "default_generated_by",
+      "file": "crates/roboticus-core/src/personality.rs",
+      "line": 56
+    },
+    {
+      "symbol": "\u003cFirmwareApprovals as Default\u003e::default",
+      "file": "crates/roboticus-core/src/personality.rs",
+      "line": 103
+    },
+    {
+      "symbol": "default_spending_threshold",
+      "file": "crates/roboticus-core/src/personality.rs",
+      "line": 111
+    },
+    {
+      "symbol": "default_require_confirmation",
+      "file": "crates/roboticus-core/src/personality.rs",
+      "line": 114
+    },
+    {
+      "symbol": "default_priority",
+      "file": "crates/roboticus-core/src/types.rs",
+      "line": 149
+    },
+    {
+      "symbol": "default_risk_level",
+      "file": "crates/roboticus-core/src/types.rs",
+      "line": 153
+    },
+    {
+      "symbol": "\u003cRow as Default\u003e::default",
+      "file": "crates/roboticus-db/src/backend.rs",
+      "line": 111
+    },
+    {
+      "symbol": "\u003cInMemoryBackend as Default\u003e::default",
+      "file": "crates/roboticus-db/src/backend.rs",
+      "line": 183
+    },
+    {
+      "symbol": "default_backend",
+      "file": "crates/roboticus-db/src/backend.rs",
+      "line": 235
+    },
+    {
+      "symbol": "\u003cBackendConfig as Default\u003e::default",
+      "file": "crates/roboticus-db/src/backend.rs",
+      "line": 240
+    },
+    {
+      "symbol": "\u003cCascadeStrategy as Display\u003e::fmt",
+      "file": "crates/roboticus-llm/src/cascade.rs",
+      "line": 128
+    },
+    {
+      "symbol": "CircuitBreakerRegistry::force_half_open",
+      "file": "crates/roboticus-llm/src/circuit.rs",
+      "line": 80
+    },
+    {
+      "symbol": "\u003cEvalConfig as Default\u003e::default",
+      "file": "crates/roboticus-llm/src/eval_harness.rs",
+      "line": 69
+    },
+    {
+      "symbol": "\u003cInferenceTier as Display\u003e::fmt",
+      "file": "crates/roboticus-llm/src/tiered.rs",
+      "line": 121
+    },
+    {
+      "symbol": "ApiClient::agent_status",
+      "file": "crates/roboticus-tui/src/api_client.rs",
+      "line": 108
+    }
+  ]
+}

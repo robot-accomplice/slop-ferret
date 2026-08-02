@@ -28,7 +28,7 @@ sequenceDiagram
     A-->>SF: discharge.json
 
     Op->>SF: ferret enumerate plan.json discharge.json
-    SF-->>A: coverage.repo, coverage.plan, remaining[], exit 0|3
+    SF-->>A: attested.repo, attested.plan, remaining[], exit 0|3
 ```
 
 ## Where each number comes from
@@ -40,8 +40,8 @@ sequenceDiagram
 | `h_worklist` | production paths matching an H signal — a **ranking**, not an admission gate |
 | `h_unmatched` | `production − h_worklist` — the files no signal reached |
 | `h_unmatched_changes` | changed-since-`<ref>` files no signal reached — a **strict subset** of the blind spots, bounded by the baseline |
-| `coverage.repo` | `|read ∩ production| / |production|`. **Waived counts as unread.** |
-| `coverage.plan` | dispositioned items / (required + deferred + unmatched) |
+| `attested.repo` | `|read ∩ production| / |production|`. **Waived counts as unread.** |
+| `attested.plan` | dispositioned items / (required + deferred + unmatched) |
 | exit code | `3` if anything raised is undispositioned, else `0`. Bookkeeping only. |
 
 ## The two enumerations, and why both exist
