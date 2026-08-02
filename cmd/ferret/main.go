@@ -23,6 +23,7 @@ import (
 
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
 	"github.com/robot-accomplice/slop-ferret/internal/install"
+	"github.com/robot-accomplice/slop-ferret/internal/report"
 )
 
 // binVersion is this binary's own version, and it is DELIBERATELY not the skill's. They were one
@@ -35,6 +36,7 @@ const usage = `ferret — ferrets AI slop out of a repository
   ferret plan <map-dir> <sha> <repo> [--since <ref>]    > plan.json
   ferret discharge <plan.json>                          > discharge skeleton, all undispositioned
   ferret enumerate <plan.json> <discharge.json> [<repo>]  0 accounted · 3 items open · 4 refused
+  ferret report <input.json> <out.html>                 render the sweep report
   ferret records <repo>                                 prior sweeps, newest first
   ferret install [--ref <ref>] [--from <dir>]           acquire the skill and deploy it
   ferret update                                         synonym of install
@@ -85,6 +87,29 @@ func run(argv []string, stdout, stderr io.Writer) int {
 			return fail(err, stderr)
 		}
 		fmt.Fprintln(stdout, string(sk))
+		return gate.ExitOK
+	case "report":
+		if len(args) != 2 {
+			fmt.Fprintln(stderr, usage)
+			return gate.ExitMisuse
+		}
+		b, err := os.ReadFile(args[0])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		in, err := report.ParseInput(b)
+		if err != nil {
+			return fail(err, stderr)
+		}
+		f, err := os.Create(args[1])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		defer f.Close()
+		if err := report.Render(f, in); err != nil {
+			return fail(err, stderr)
+		}
+		fmt.Fprintf(stderr, "report written: %s\n", args[1])
 		return gate.ExitOK
 	case "records":
 		if len(args) != 1 {
