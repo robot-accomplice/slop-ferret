@@ -13,12 +13,12 @@ func render(t *testing.T, in Input) string {
 	if err := Render(&b, in); err != nil {
 		t.Fatal(err)
 	}
-	return out
+	return b.String()
 }
 
 func sample() Input {
 	return Input{
-		Repo: "ghola", SHA: "4f33b3c", SkillVersion: "2026-08-02.2", LexiconVer: "2026-08-01.1",
+		Repo: "ghola", SHA: "4f33b3c", SkillVersion: "2026-08-02.3", LexiconVer: "2026-08-01.1",
 		Tier: "1-2", AttestedRepo: "23/25", AttestedPlan: "25/25", Waived: 2,
 		Accounting: "complete", Denominator: 25,
 		FamiliesRun: []string{"H", "G"}, FamiliesNot: []string{"C", "D"},
@@ -33,39 +33,30 @@ func sample() Input {
 	}
 }
 
-// Severity first, never volume first: count runs INVERSE to severity, so a page ordered by count
-// argues for exactly the wrong priority.
+// Severity first, never volume first: count runs INVERSE to severity — the largest class in the
+// first campaign was 7,022 occurrences and cosmetic, while the blocking ones sat at 33 and 8. A
+// page ordered by count argues for exactly the wrong priority.
 func TestFindingsAreOrderedSeverityFirstThenVerifiedFirst(t *testing.T) {
-	var b bytes.Buffer
-	if err := Render(&b, sample()); err != nil {
-		t.Fatal(err)
-	}
-	out := out
-	order := []string{"verified blocker", "suspected blocker", "fixable", "note thing"}
+	out := render(t, sample())
 	prev := -1
-	for _, want := range order {
+	for _, want := range []string{"verified blocker", "suspected blocker", "fixable", "note thing"} {
 		i := strings.Index(out, want)
 		if i < 0 {
-			t.Fatalf("%q missing", want)
+			t.Fatalf("%q missing from the page", want)
 		}
 		if i < prev {
-			t.Errorf("%q out of order", want)
+			t.Errorf("%q rendered out of severity order", want)
 		}
 		prev = i
 	}
 }
 
-// Deterministic: the same input renders byte-identically. That is the whole reason this is not
-// hand-written.
+// Byte-identical output for identical input. This is the whole reason the page is not hand-written:
+// a model renders it slightly differently every time, and twice shipped malformed markup.
 func TestRenderIsDeterministic(t *testing.T) {
-	var a, b bytes.Buffer
-	if err := Render(&a, sample()); err != nil {
-		t.Fatal(err)
-	}
-	if err := Render(&b, sample()); err != nil {
-		t.Fatal(err)
-	}
-	if a.String() != out {
+	first := render(t, sample())
+	second := render(t, sample())
+	if first != second {
 		t.Fatal("two renders of the same input differ")
 	}
 }
@@ -81,22 +72,20 @@ func TestPageMakesNoExternalRequests(t *testing.T) {
 	}
 }
 
-// The rate is suppressed below ~100 non-test source files and the denominator is published either
+// The rate is suppressed below ~100 non-test source files, and the denominator is published either
 // way: one finding moves a small rate by 13-50 points, and a number is harder to retract than a blank.
 func TestRateIsSuppressedBelowTheFloorAndTheDenominatorIsAlwaysShown(t *testing.T) {
-	in := sample()
-	out := render(t, in)
-	if !strings.Contains(out, "n/a (denominator 25 &lt; 100)") &&
-		!strings.Contains(out, "n/a (denominator 25 < 100)") {
-		t.Errorf("small denominator must suppress the rate and say why")
-	}
+	out := render(t, sample())
 	if !strings.Contains(out, "denominator 25") {
 		t.Error("the denominator must be published regardless")
 	}
+	if strings.Contains(out, "per 1,000") {
+		t.Error("a 25-file denominator must not produce a rate")
+	}
+
+	in := sample()
 	in.Denominator = 200
-	b.Reset()
-	Render(&b, in)
-	if !strings.Contains(out, "per 1,000") {
+	if !strings.Contains(render(t, in), "per 1,000") {
 		t.Error("above the floor the rate should render")
 	}
 }
@@ -106,16 +95,15 @@ func TestRateIsSuppressedBelowTheFloorAndTheDenominatorIsAlwaysShown(t *testing.
 func TestZeroVerifiedWithSuspectedSaysSoOnItsFace(t *testing.T) {
 	in := sample()
 	in.Findings = []Finding{{Title: "lead", Severity: "blocking", Status: "SUSPECTED", File: "x.rs"}}
-	out := render(t, in)
-	if !strings.Contains(out, "none verified") {
+	if !strings.Contains(render(t, in), "none verified") {
 		t.Error("must name the tell: leads with nothing verified is not a clean result")
 	}
 }
 
-// The self-report caveat is the frame, not a footnote.
+// The self-report caveat is the frame, not a footnote. This tool reports what the auditor stated;
+// it does not observe reading, and the page has to say so where a reader will see it.
 func TestThePageStatesThatItDoesNotObserveReading(t *testing.T) {
-	out := render(t, sample())
-	if !strings.Contains(out, "does not observe reading") {
+	if !strings.Contains(render(t, sample()), "does not observe reading") {
 		t.Error("the page must state that the read figures are the auditor's statement")
 	}
 }
@@ -126,13 +114,13 @@ func TestFindingProseIsEscaped(t *testing.T) {
 	in := sample()
 	in.Findings = []Finding{{Title: `<img src=x onerror=alert(1)>`, Severity: "note",
 		Status: "VERIFIED", File: "a.go"}}
-	out := render(t, in)
-	if strings.Contains(out, "<img src=x") {
+	if strings.Contains(render(t, in), "<img src=x") {
 		t.Error("finding prose must be escaped, not injected")
 	}
 }
 
-// Coverage before results: a reader must know the shape of the sweep before reading its output.
+// Coverage before results, always: a reader must know the shape of the sweep before they read its
+// output.
 func TestCoverageSectionPrecedesFindings(t *testing.T) {
 	out := render(t, sample())
 	if strings.Index(out, "what was and was not covered") > strings.Index(out, "Findings — severity first") {
@@ -140,11 +128,10 @@ func TestCoverageSectionPrecedesFindings(t *testing.T) {
 	}
 }
 
+// `}}` alone is not a marker — CSS closes nested @media blocks with it. A template ACTION always
+// opens with `{{`, and the stylesheet never contains that sequence.
 func TestTemplateHasNoUnrenderedActions(t *testing.T) {
-	out := render(t, sample())
-	// `}}` alone is not a marker — CSS closes nested @media blocks with it. A template ACTION
-	// always opens with `{{`, and the stylesheet never contains that sequence.
-	if regexp.MustCompile(`\{\{`).MatchString(out) {
+	if regexp.MustCompile(`\{\{`).MatchString(render(t, sample())) {
 		t.Error("unrendered template actions in the output")
 	}
 }
