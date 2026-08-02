@@ -236,6 +236,7 @@ type rowDoc struct {
 	Generator              string `json:"generator"`
 	SHA                    string `json:"sha"`
 	Fidelity               string `json:"fidelity"`
+	Tree                   string `json:"tree"`
 	ReachabilityComputable bool   `json:"reachability_computable"`
 	Rows                   []struct {
 		Symbol string `json:"symbol"`
@@ -434,18 +435,31 @@ func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, e
 				"one this gate may accept), codemap-graph/1 (graph.json), magma-code-graph/1 "+
 				"(the architext emit).", name, doc.ContractVersion)
 		}
-		// A dirty-tree map reports a composite `<sha>+<diffhash>` rather than a bare sha, so it can
-		// never equal a pinned commit and this refuses by construction. That is intended: a dirty
-		// map can report in-flight, not-yet-wired code as dead, and its sha is disproportionately
-		// likely to evaporate because in-flight commits get amended or rebased away.
 		if doc.SHA != pinnedSHA {
-			extra := ""
-			if strings.Contains(doc.SHA, "+") {
-				extra = " That is a DIRTY-tree map (`<sha>+<diffhash>`); commit or stash first, " +
-					"then regenerate. Never gate on a dirty map."
-			}
-			return nil, nil, die(ExitRefused, "%s sha %q != pinned %q — the map describes a different tree "+
-				"than the sweep; regenerate the map at %s.%s", name, doc.SHA, pinnedSHA, pinnedSHA, extra)
+			return nil, nil, die(ExitRefused, "%s sha %q != pinned %q — the map describes a "+
+				"different tree than the sweep; regenerate the map at %s.",
+				name, doc.SHA, pinnedSHA, pinnedSHA)
+		}
+		// THE DIRTY-TREE REFUSAL, and it checks `tree` because that is where the marker actually is.
+		//
+		// This gate compared `sha` and claimed a dirty map "refuses by construction" because magma
+		// stamped a composite `<sha>+<diffhash>` there. It does not: measured against real magma on
+		// 2026-08-02, a dirty tree yields sha="4f33b3c" (the clean head sha) and
+		// tree="4f33b3c-dirty". The comparison therefore passed and a dirty map was ACCEPTED, exit
+		// 0 — the guarantee was prose describing behaviour the code lacked, sitting in the gate,
+		// about the gate's own headline safety property. Found by sweeping magma.
+		//
+		// Why it matters: a dirty map reports in-flight, not-yet-wired code as dead, and its
+		// boundary is disproportionately likely to evaporate when the commit is amended or rebased
+		// away. Two prior sweeps pinned exactly such a boundary and neither resolves today, which
+		// is what made their denominators unreproducible.
+		//
+		// An ABSENT tree field is accepted: an older map simply did not carry one, and absence is
+		// not evidence of dirtiness.
+		if doc.Tree != "" && doc.Tree != doc.SHA {
+			return nil, nil, die(ExitRefused, "%s is a DIRTY-tree map: sha %q but tree %q. Commit "+
+				"or stash first, then regenerate. A dirty map reports in-flight code as dead and "+
+				"pins a boundary that is likely to evaporate.", name, doc.SHA, doc.Tree)
 		}
 		docs[name] = &doc
 	}
