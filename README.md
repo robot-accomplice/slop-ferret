@@ -178,10 +178,24 @@ only one this accepts), `codemap-graph/1` (`graph.json`), `magma-code-graph/1` (
 emit). `plan` refuses a map whose `contract_version` it does not know, and refuses a map of a
 different tree by `sha`, so a stale map fails loud rather than seeding rows from the wrong commit.
 
-**Where the division is going.** Ranking by consequence belongs in magma, not here: *"does this
-file reach `os/exec`, `net/http`, `os.OpenFile`, `crypto/*`"* is a graph query over imports, and
-magma already holds the graph and the types. The path-name signals in this repo guess semantics
-from names the target's own authors chose, which is why they under-enumerate silently.
+**The signal vocabulary is a reading-order hint, not a completeness signal.** Measured across five
+real repositories on 2026-08-02: **59% label precision**, 20% of production files matched, and
+**0-of-6 recall on the files that actually produced findings** — including the one this tool exists
+because of. It guesses semantics from names the *target's* authors chose, so it works when they
+happen to have used one of its words and not otherwise.
+
+What makes that safe is not the vocabulary's quality. It is that **a file no signal reaches is
+reported as unread, never as clean** — the ranking can be wrong without the report becoming wrong.
+
+**It lives in the skill, not the binary** (`skill/references/h-signals`), so it can be iterated from
+usage without a binary release: add a word after a sweep that missed something, reinstall the skill,
+done. Extend per-repo with a `.slop-h-signals` file in the target, same `reason: regex` format. It
+is expected to improve by accumulation, and the tier split it feeds is pinned by a committed fixture
+so a change to it is a deliberate re-measurement rather than a silent drift.
+
+**Where consequence ranking is going.** Into magma, which holds the call graph and the types:
+*"does this file reach `os/exec`, `net/http`, `os.OpenFile`, `crypto/*`"* is a graph query over
+imports and a real signal. No vocabulary of names will ever be one.
 
 See [`docs/architecture/`](docs/architecture/) for C4 diagrams and the dataflow walkthrough.
 
