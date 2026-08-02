@@ -20,9 +20,13 @@ condition can never be true.
 
 The name is the hunter, not the quarry.
 
-> **Status — not released, and not yet cleared for use.** There is no tagged release and the
-> go/no-go gate has not been run. The sections below describe the tool as built; nothing here has
-> been through a ship review, so treat it as unproven rather than ready.
+> **Status — NOT RELEASED. The go/no-go review returned NO-GO.**
+> Five independent red-team stations all voted against shipping. Read
+> [`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md) before relying on anything below.
+>
+> The headline reason: **`coverage.repo` is computed from a self-reported list of files and nothing
+> corroborates it.** It is not a measurement of what was read. Treat every number this tool emits as
+> a claim by whoever ran it, not as evidence.
 
 ## Why
 
