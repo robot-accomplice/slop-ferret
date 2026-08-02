@@ -37,6 +37,14 @@ jobs:
       - name: build
         run: go build ./...
 
+      # The magma seam is this tool's reason to exist and had NEVER been executed against real
+      # magma in any test — every fixture was written from our own belief about the contract, so
+      # the tests agreed with the bugs. The integration test does not skip when magma is absent:
+      # a test that silently skips is indistinguishable from one that ran and passed. Installing it
+      # here is what makes that test real rather than decorative.
+      - name: install magma (the real producer this tool consumes)
+        run: go install github.com/robot-accomplice/magma@v0.2.0
+
       - name: test (race) + coverage
         run: go test ./... -race -covermode=atomic -coverprofile=coverage.out
 

@@ -17,7 +17,7 @@ func TestWriteRecordRefusesAShaThatDoesNotResolve(t *testing.T) {
 	pl.SHA = "0000000000000000000000000000000000000000"
 	// Status must be settled so this reaches the sha check rather than the settle gate — the
 	// precedence is deliberate: a sweep that did not settle is refused before anything else.
-	_, err := WriteRecord(repo, pl, &Discharge{SHA: pl.SHA}, &Result{Status: "settled"})
+	_, err := WriteRecord(repo, pl, &Discharge{SHA: pl.SHA}, &Result{Accounting: "complete"})
 	if err == nil || !strings.Contains(err.Error(), "does not resolve") {
 		t.Fatalf("want a refusal naming the unresolvable sha, got %v", err)
 	}
@@ -35,7 +35,7 @@ func TestWriteRecordThenListRoundTrips(t *testing.T) {
 		CheckedClean: []CheckedClean{{Class: "phantom dependency", Method: "build+vet, 4 targets"}},
 		NearMisses:   []string{"limit-rate starvation — refuted by the chunk clamp"},
 		ReportPath:   "/tmp/report.html"}
-	res := &Result{Coverage: Coverage{Repo: "17/25", Plan: "25/25"}, Status: "settled"}
+	res := &Result{Attested: Attested{Repo: "17/25", Plan: "25/25"}, Accounting: "complete"}
 
 	path, err := WriteRecord(repo, pl, dis, res)
 	if err != nil {
@@ -56,7 +56,7 @@ func TestWriteRecordThenListRoundTrips(t *testing.T) {
 		t.Fatalf("ListRecords = %d records, want 1", len(got))
 	}
 	r := got[0]
-	if r.SHA != sha || r.CoverageRepo != "17/25" || r.Tier != "1-2" {
+	if r.SHA != sha || r.AttestedRepo != "17/25" || r.Tier != "1-2" {
 		t.Errorf("round-trip lost fields: %+v", r)
 	}
 	// The attested half must survive: it is the half the next sweep reads to avoid re-spending
@@ -103,7 +103,7 @@ func TestListRecordsIsEmptyNotAnErrorForAnUnsweptRepo(t *testing.T) {
 // End-to-end: verify writes a record by default and --no-record suppresses it. Always-write is the
 // point -- a record you must remember to request is one that will not exist when the next sweep
 // looks for it.
-func TestVerifyAndRecordWritesByDefaultAndCanBeSuppressed(t *testing.T) {
+func TestEnumerateAndRecordWritesByDefaultAndCanBeSuppressed(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	t.Setenv("HOME", t.TempDir())
 	pl := planFor(t, repo)
@@ -113,7 +113,7 @@ func TestVerifyAndRecordWritesByDefaultAndCanBeSuppressed(t *testing.T) {
 		"sha": pl.SHA, "read_paths": pl.ProductionFiles,
 		"families_not_run": []string{"D", "E"}, "tier": "1-2"})
 
-	_, path, code, err := VerifyAndRecord(pp, dp, repo, true)
+	_, path, code, err := EnumerateAndRecord(pp, dp, repo, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestVerifyAndRecordWritesByDefaultAndCanBeSuppressed(t *testing.T) {
 		t.Fatalf("recorded path does not exist: %v", err)
 	}
 
-	_, path2, _, err := VerifyAndRecord(pp, dp, repo, false)
+	_, path2, _, err := EnumerateAndRecord(pp, dp, repo, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestVerifyAndRecordWritesByDefaultAndCanBeSuppressed(t *testing.T) {
 
 // A record that cannot be written must surface, but must not discard a verify result the operator
 // already earned.
-func TestVerifyAndRecordSurfacesAWriteFailureWithoutLosingTheResult(t *testing.T) {
+func TestEnumerateAndRecordSurfacesAWriteFailureWithoutLosingTheResult(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	t.Setenv("HOME", t.TempDir())
 	pl := planFor(t, repo)
@@ -147,7 +147,7 @@ func TestVerifyAndRecordSurfacesAWriteFailureWithoutLosingTheResult(t *testing.T
 	dp := writeJSON(t, map[string]any{"sha": pl.SHA, "read_paths": pl.ProductionFiles,
 		"families_not_run": []string{"D", "E"}})
 
-	res, _, _, err := VerifyAndRecord(pp, dp, repo, true)
+	res, _, _, err := EnumerateAndRecord(pp, dp, repo, true)
 	if err == nil || !strings.Contains(err.Error(), "record") {
 		t.Fatalf("want the record failure surfaced, got %v", err)
 	}
@@ -202,7 +202,7 @@ func TestWriteRecordRefusesToEscapeEvenIfTheKeyIsHostile(t *testing.T) {
 	pl := planFor(t, repo)
 	pl.SHA = sha
 
-	path, err := WriteRecord(repo, pl, &Discharge{SHA: sha}, &Result{Status: "settled"})
+	path, err := WriteRecord(repo, pl, &Discharge{SHA: sha}, &Result{Accounting: "complete"})
 	if err == nil {
 		root := filepath.Join(home, ".slop-ferret", "records")
 		rel, rerr := filepath.Rel(root, path)
@@ -237,7 +237,7 @@ func TestWriteRecordRefusesANonHexSHA(t *testing.T) {
 	run(t, repo, "branch", "settings")
 	pl := planFor(t, repo)
 	pl.SHA = "settings"
-	if _, err := WriteRecord(repo, pl, &Discharge{SHA: "settings"}, &Result{Status: "settled"}); err == nil {
+	if _, err := WriteRecord(repo, pl, &Discharge{SHA: "settings"}, &Result{Accounting: "complete"}); err == nil {
 		t.Fatal("a non-hex sha must not reach a filename")
 	}
 }
@@ -247,15 +247,15 @@ func TestWriteRecordRefusesANonHexSHA(t *testing.T) {
 // that read zero files, left 100 items open, exited 3, and still wrote a record asserting two
 // classes clean with an EMPTY method. That is the persistence layer converting an unperformed audit
 // into a completed-looking one — the exact invariant this tool exists to defend.
-func TestWriteRecordRefusesAnUnsettledSweep(t *testing.T) {
+func TestWriteRecordRefusesAnIncompleteAccounting(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	pl := planFor(t, repo)
 	pl.SHA = headSHA(t, repo)
 	dis := &Discharge{SHA: pl.SHA, CheckedClean: []CheckedClean{{Class: "dead-on-arrival", Method: "x"}}}
-	_, err := WriteRecord(repo, pl, dis, &Result{Status: "open"})
-	if err == nil || !strings.Contains(err.Error(), "did not settle") {
-		t.Fatalf("an unsettled sweep must not become a durable record: %v", err)
+	_, err := WriteRecord(repo, pl, dis, &Result{Accounting: "incomplete"})
+	if err == nil || !strings.Contains(err.Error(), "incomplete accounting") {
+		t.Fatalf("an incomplete accounting must not become a durable record: %v", err)
 	}
 }
 
@@ -268,7 +268,7 @@ func TestWriteRecordDropsACheckedCleanWithNoMethod(t *testing.T) {
 		{Class: "dead-on-arrival", Method: ""},
 		{Class: "phantom dependency", Method: "build+vet on 4 targets"},
 	}}
-	if _, err := WriteRecord(repo, pl, dis, &Result{Status: "settled"}); err != nil {
+	if _, err := WriteRecord(repo, pl, dis, &Result{Accounting: "complete"}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ListRecords(repo)

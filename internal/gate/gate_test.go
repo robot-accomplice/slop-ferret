@@ -280,12 +280,12 @@ func planFor(t *testing.T, repo string) *Plan {
 func TestUnreadRequiredPathLeavesAnItemOpen(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	pl := planFor(t, repo)
-	res, c, err := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{"sha": "abc123"}))
+	res, c, err := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{"sha": "abc123"}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c != 3 || res.Status != "open" {
-		t.Fatalf("code=%d status=%s, want 3/open", c, res.Status)
+	if c != 3 || res.Accounting != "incomplete" {
+		t.Fatalf("code=%d status=%s, want 3/open", c, res.Accounting)
 	}
 }
 
@@ -295,14 +295,14 @@ func TestReadingEverythingSettlesAndFillsBothFractions(t *testing.T) {
 		"internal/bridge/bridge.go": "package b\n",
 	})
 	pl := planFor(t, repo)
-	res, c, _ := Verify(writeJSON(t, pl),
+	res, c, _ := Enumerate(writeJSON(t, pl),
 		writeJSON(t, map[string]any{"sha": "abc123", "read_paths": pl.ProductionFiles,
 			"families_not_run": []string{"D", "E"}}))
-	if c != 0 || res.Status != "settled" {
-		t.Fatalf("code=%d status=%s remaining=%v", c, res.Status, res.Remaining)
+	if c != 0 || res.Accounting != "complete" {
+		t.Fatalf("code=%d status=%s remaining=%v", c, res.Accounting, res.Remaining)
 	}
-	if res.Coverage.Repo != "2/2" {
-		t.Errorf("coverage.repo = %s, want 2/2", res.Coverage.Repo)
+	if res.Attested.Repo != "2/2" {
+		t.Errorf("coverage.repo = %s, want 2/2", res.Attested.Repo)
 	}
 }
 
@@ -315,19 +315,19 @@ func TestAWaiverSettlesTheItemAndDoesNotRaiseRepoCoverage(t *testing.T) {
 		"internal/bridge/bridge.go": "package b\n",
 	})
 	pl := planFor(t, repo)
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": []string{"internal/wallet/pay.go"},
 		"coverage_waived":  []any{"internal/bridge/bridge.go"},
 		"families_not_run": []string{"D", "E"}}))
-	if c != 0 || res.Status != "settled" {
+	if c != 0 || res.Accounting != "complete" {
 		t.Fatalf("a waiver must settle the accounting: %v", res.Remaining)
 	}
-	if res.Coverage.Repo != "1/2" {
+	if res.Attested.Repo != "1/2" {
 		t.Errorf("coverage.repo = %s, want 1/2 — a waived file must still count as UNREAD",
-			res.Coverage.Repo)
+			res.Attested.Repo)
 	}
-	if res.Coverage.Waived != 1 {
-		t.Errorf("waived = %d", res.Coverage.Waived)
+	if res.Attested.Waived != 1 {
+		t.Errorf("waived = %d", res.Attested.Waived)
 	}
 }
 
@@ -337,7 +337,7 @@ func TestAWaiverMayCarryAnOptionalReason(t *testing.T) {
 		"internal/bridge/bridge.go": "package b\n",
 	})
 	pl := planFor(t, repo)
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": []string{"internal/wallet/pay.go"},
 		"coverage_waived": []any{map[string]string{"path": "internal/bridge/bridge.go",
 			"reason": "covered last week"}},
@@ -345,8 +345,8 @@ func TestAWaiverMayCarryAnOptionalReason(t *testing.T) {
 	if c != 0 {
 		t.Fatalf("remaining=%v", res.Remaining)
 	}
-	if res.Coverage.Repo != "1/2" {
-		t.Errorf("coverage.repo = %s", res.Coverage.Repo)
+	if res.Attested.Repo != "1/2" {
+		t.Errorf("coverage.repo = %s", res.Attested.Repo)
 	}
 }
 
@@ -358,15 +358,15 @@ func TestTheTwoFractionsCanDisagreeWhichIsThePoint(t *testing.T) {
 		"internal/bridge/bridge.go": "package b\n",
 	})
 	pl := planFor(t, repo)
-	res, _, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, _, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": []string{"internal/wallet/pay.go"},
 		"coverage_waived":  []any{"internal/bridge/bridge.go"},
 		"families_not_run": []string{"D", "E"}}))
-	if res.Coverage.Plan != "2/2" {
-		t.Errorf("plan fraction = %s, want fully dispositioned", res.Coverage.Plan)
+	if res.Attested.Plan != "2/2" {
+		t.Errorf("plan fraction = %s, want fully dispositioned", res.Attested.Plan)
 	}
-	if res.Coverage.Repo != "1/2" {
-		t.Errorf("repo fraction = %s, want half read", res.Coverage.Repo)
+	if res.Attested.Repo != "1/2" {
+		t.Errorf("repo fraction = %s, want half read", res.Attested.Repo)
 	}
 	if strings.Contains(res.Headline, "COMPLETE") {
 		t.Error("the verdict triple must not come back")
@@ -378,7 +378,7 @@ func TestTheTwoFractionsCanDisagreeWhichIsThePoint(t *testing.T) {
 func TestADischargeFromAnotherSweepDoesNotSatisfyThisPlan(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	pl := planFor(t, repo)
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "OTHER", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"}}))
 	if c != 3 {
 		t.Fatal("a foreign discharge must not settle")
@@ -396,7 +396,7 @@ func TestACandidateNeitherClearedNorRefutedKeepsAnItemOpen(t *testing.T) {
 	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true,
 		[]map[string]any{{"symbol": "Ghost", "file": "internal/wallet/pay.go", "line": 3}})
 	pl, _ := BuildPlan(m, "abc123", repo, "")
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"}}))
 	if c != 3 {
 		t.Fatal("an unexamined candidate must keep an item open")
@@ -411,7 +411,7 @@ func TestRefutingACandidateIsEnoughToAccountForIt(t *testing.T) {
 	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true,
 		[]map[string]any{{"symbol": "Ghost", "file": "internal/wallet/pay.go", "line": 3}})
 	pl, _ := BuildPlan(m, "abc123", repo, "")
-	_, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	_, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"},
 		"candidates_refuted": []map[string]string{{"file": "internal/wallet/pay.go", "symbol": "Ghost"}}}))
 	if c != 0 {
@@ -426,7 +426,7 @@ func TestAFiledCandidateThatNeverClearedItsBarKeepsAnItemOpen(t *testing.T) {
 	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true,
 		[]map[string]any{{"symbol": "Ghost", "file": "internal/wallet/pay.go", "line": 3}})
 	pl, _ := BuildPlan(m, "abc123", repo, "")
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"},
 		"candidates_filed":   []map[string]string{{"file": "internal/wallet/pay.go", "symbol": "Ghost"}},
 		"candidates_refuted": []map[string]string{{"file": "internal/wallet/pay.go", "symbol": "Ghost"}}}))
@@ -439,7 +439,7 @@ func TestAFiledCandidateThatNeverClearedItsBarKeepsAnItemOpen(t *testing.T) {
 func TestUnacknowledgedUnseededFamiliesKeepAnItemOpen(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	pl := planFor(t, repo)
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": pl.ProductionFiles}))
 	if c != 3 || !strings.Contains(strings.Join(res.Remaining, " "), "families_not_run") {
 		t.Fatalf("code=%d remaining=%v", c, res.Remaining)
@@ -454,7 +454,7 @@ func TestAnEmptyWorklistCannotSettle(t *testing.T) {
 	if len(pl.HWorklist) != 0 {
 		t.Skip("fixture matched a signal; not the case under test")
 	}
-	res, c, _ := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{
+	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"}}))
 	if c != 3 || !strings.Contains(strings.Join(res.Remaining, " "), "h_worklist is EMPTY") {
 		t.Fatalf("code=%d remaining=%v", c, res.Remaining)
@@ -578,7 +578,7 @@ func TestARefusalAndAnUnfinishedSweepUseDifferentExitCodes(t *testing.T) {
 
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	pl := planFor(t, repo)
-	_, c, err := Verify(writeJSON(t, pl), writeJSON(t, map[string]any{"sha": "abc123"}))
+	_, c, err := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{"sha": "abc123"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,7 +673,7 @@ func TestASweepOverARefusedMapCannotSettleWithoutDeclaringA(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
 	m := writeRefusedMap(t, "abc123", "no parser")
 	p, _ := BuildPlan(m, "abc123", repo, "")
-	res, code, _ := Verify(writeJSON(t, p), writeJSON(t, map[string]any{
+	res, code, _ := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
 		"sha": "abc123", "read_paths": p.ProductionFiles,
 		"families_not_run": []string{"D", "E"}})) // A omitted on purpose
 	if code != ExitItemsOpen {

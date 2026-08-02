@@ -35,7 +35,15 @@ type Discharge struct {
 	ReportPath        string         `json:"report_path"`
 }
 
-type Coverage struct {
+// Attested is what the AUDITOR STATED, counted. It is not a measurement and this tool does not
+// observe reading: `read_paths` comes from the sweeping agent's own discharge. The field names say
+// "attested" rather than "coverage" for that reason — the previous naming read as verification of
+// the audit, which is a claim the arithmetic cannot support and which five independent reviewers
+// called out as the tool's central overclaim.
+//
+// This is an audit and reporting tool. It looks at the thing, evaluates what it can, and reports.
+// What the auditor did is the auditor's statement, reported as such.
+type Attested struct {
 	Repo         string   `json:"repo"`
 	RepoPct      *float64 `json:"repo_pct"`
 	RepoNote     string   `json:"repo_note"`
@@ -48,7 +56,7 @@ type Coverage struct {
 
 type Result struct {
 	PlanSHA                string     `json:"plan_sha"`
-	Coverage               Coverage   `json:"coverage"`
+	Attested               Attested   `json:"attested"`
 	HWorklistTotal         int        `json:"h_worklist_total"`
 	HRequiredTotal         int        `json:"h_required_total"`
 	HPathsAttested         int        `json:"h_paths_attested"`
@@ -68,17 +76,19 @@ type Result struct {
 	UnseededFamilies       []string   `json:"unseeded_families"`
 	FamiliesDeclaredNotRun []string   `json:"families_declared_not_run"`
 	Remaining              []string   `json:"remaining"`
-	Status                 string     `json:"status"`
+	Accounting             string     `json:"accounting"`
 	Headline               string     `json:"headline"`
 }
 
 type key struct{ file, symbol string }
 
+// pct FLOORS rather than rounds. Rounding let 1999/2000 render as 100.0%, so a partial read as
+// complete — in the one number a reader scans first.
 func pct(done, total int) *float64 {
 	if total == 0 {
 		return nil
 	}
-	v := float64(int(1000*float64(done)/float64(total)+0.5)) / 10
+	v := float64(int(1000*float64(done)/float64(total))) / 10
 	return &v
 }
 
@@ -109,15 +119,15 @@ func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, er
 // Always-write with an opt-out, deliberately: a record you must remember to request is one that
 // will not exist when the next sweep looks for it, and the whole point of the store is that Step
 // 0.2 finds something.
-func VerifyAndRecord(planPath, dischargePath, repo string, record bool) (*Result, string, int, error) {
-	res, code, err := Verify(planPath, dischargePath)
+func EnumerateAndRecord(planPath, dischargePath, repo string, record bool) (*Result, string, int, error) {
+	res, code, err := Enumerate(planPath, dischargePath)
 	if err != nil || !record || repo == "" {
 		return res, "", code, err
 	}
 	// An unfinished sweep simply does not produce a record. That is the normal case, not a failure:
 	// records exist to be trusted by a LATER sweep, and only a settled one has established anything.
 	// Returning an error here would make an ordinary in-progress sweep look broken.
-	if res.Status != "settled" {
+	if res.Accounting != "complete" {
 		return res, "", code, nil
 	}
 	pl, dis, lerr := loadPlanAndDischarge(planPath, dischargePath)
@@ -133,12 +143,21 @@ func VerifyAndRecord(planPath, dischargePath, repo string, record bool) (*Result
 	return res, path, code, nil
 }
 
-func Verify(planPath, dischargePath string) (*Result, int, error) {
+func Enumerate(planPath, dischargePath string) (*Result, int, error) {
 	plp, disp, err := loadPlanAndDischarge(planPath, dischargePath)
 	if err != nil {
 		return nil, ExitMisuse, err
 	}
 	pl, dis := *plp, *disp
+
+	// The plan's own contract was written at BuildPlan and read nowhere, while loadMap refuses an
+	// unknown MAP contract with exit 4. The asymmetry meant any future field rename would degrade
+	// to zeros and SETTLE rather than refuse — guarding the input we did not design and not the one
+	// we did.
+	if pl.Contract != "" && pl.Contract != planContract {
+		return nil, ExitRefused, die(ExitRefused, "plan contract %q is not %q — this plan was "+
+			"written by a different version of ferret; re-run `ferret plan`", pl.Contract, planContract)
+	}
 
 	var remaining []string
 
@@ -321,15 +340,16 @@ func Verify(planPath, dischargePath string) (*Result, int, error) {
 
 	res := &Result{
 		PlanSHA: pl.SHA,
-		Coverage: Coverage{
+		Attested: Attested{
 			Repo:    fmt.Sprintf("%d/%d", readProd, len(pl.ProductionFiles)),
 			RepoPct: pct(readProd, len(pl.ProductionFiles)),
-			RepoNote: "production source files attested. Waived files count as UNREAD. This is " +
-				"the number a reader means by 'was the repo covered'.",
+			RepoNote: "files the auditor STATES they read, over production source files found. " +
+				"This tool does not observe reading — it reports the auditor's own statement. " +
+				"Waived files count as unread.",
 			Plan:    fmt.Sprintf("%d/%d", enumItems-enumOpen, enumItems),
 			PlanPct: pct(enumItems-enumOpen, enumItems),
-			PlanNote: "items the plan raised that were dispositioned. High here and low in `repo` " +
-				"means the enumeration was narrow, not that the repo is clean.",
+			PlanNote: "items the plan raised for which the discharge states a disposition. High " +
+				"here and low in `repo` means the enumeration was narrow, not that the repo is clean.",
 			Waived:       len(waived),
 			Unclassified: len(pl.ProductionUnclassified),
 		},
@@ -350,18 +370,20 @@ func Verify(planPath, dischargePath string) (*Result, int, error) {
 	// ONE BINARY MACHINE SIGNAL, about bookkeeping only — which is all an exit code can carry
 	// honestly. It means "there are still items on the list", the way a test runner means "there
 	// are still failures": useful to a script, not a judgement about the person running it.
-	res.Status = "settled"
+	// The accounting is complete or it is not. This says nothing about whether the audit was good
+	// — only whether every item the plan raised has a stated disposition.
+	res.Accounting = "complete"
 	code := ExitOK
 	if len(remaining) > 0 {
-		res.Status = "open"
+		res.Accounting = "incomplete"
 		code = ExitItemsOpen
 	}
 	pctStr := ""
-	if res.Coverage.RepoPct != nil {
-		pctStr = fmt.Sprintf(" (%.1f%%)", *res.Coverage.RepoPct)
+	if res.Attested.RepoPct != nil {
+		pctStr = fmt.Sprintf(" (%.1f%%)", *res.Attested.RepoPct)
 	}
-	res.Headline = fmt.Sprintf("read %s source files%s · %s of the plan dispositioned",
-		res.Coverage.Repo, pctStr, res.Coverage.Plan)
+	res.Headline = fmt.Sprintf("auditor states %s source files read%s · %s of the plan dispositioned",
+		res.Attested.Repo, pctStr, res.Attested.Plan)
 	if len(waived) > 0 {
 		res.Headline += fmt.Sprintf(" · %d waived (count as unread)", len(waived))
 	}

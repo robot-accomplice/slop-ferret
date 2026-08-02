@@ -160,16 +160,18 @@ var bars = map[string]string{
 }
 
 // Heavier bar when the map's fidelity is weaker than a real call graph.
+//
+// THIS TABLE IS THE PRODUCER'S VOCABULARY, NOT A GUESS AT IT. magma emits exactly two values —
+// `rta` (Go) and `semantic` (Rust) — documented in its README's fidelity table. This gate carried
+// `reachability`, `exports`, `heuristic` and `rustc-dead_code`: four keys magma never emits, and
+// no `semantic`. So every Rust candidate was labelled "UNRECOGNISED fidelity … treated as the
+// weakest", which is exactly the failure magma's own README warns about by name. The guarding test
+// used the fictional value "quantum-vibes" — a fixture magma never produces, asserting a true but
+// irrelevant property — the same shape as the dirty-map test that certified a bug.
+// TestEveryFidelityRealMagmaEmitsHasABar now pins this against magma's actual output.
 var fidelityBar = map[string]string{
-	"reachability": "",
-	"rta":          "",
-	"exports": " NOTE: fidelity=exports (unused-export graph, not a call graph) — also confirm no " +
-		"dynamic/reflective use before trusting 'dead'",
-	"heuristic": " NOTE: fidelity=heuristic (guess with confidence, no call graph) — treat as a " +
-		"weak lead; read before filing",
-	"rustc-dead_code": " NOTE: fidelity=rustc-dead_code (the compiler's never-used lint, real " +
-		"signal but crate-local) — it cannot see `pub` API surface or cross-crate use, so also " +
-		"confirm the item is not a published API, and not reached via cfg/macro/trait dispatch",
+	"rta":      "", // Go: Rapid Type Analysis — a real call graph
+	"semantic": "", // Rust: rust-analyzer name resolution + type inference — a real call graph
 }
 
 // Exit codes. These are a CONTRACT with whatever script wraps this tool, so they are named rather
@@ -217,6 +219,7 @@ type Plan struct {
 	ReachabilityComputable bool              `json:"reachability_computable"`
 	MapProvenance          map[string]string `json:"map_provenance"`
 	NotComputableReason    string            `json:"not_computable_reason,omitempty"`
+	MapLimitations         []string          `json:"map_limitations,omitempty"`
 	UnseededFamilies       []string          `json:"unseeded_families"`
 	UnseededDetail         map[string]string `json:"unseeded_detail"`
 	Candidates             []Candidate       `json:"candidates"`
@@ -240,7 +243,17 @@ type rowDoc struct {
 	Tree                   string `json:"tree"`
 	ReachabilityComputable bool   `json:"reachability_computable"`
 	NotComputableReason    string `json:"not_computable_reason"`
-	Rows                   []struct {
+	// Limitations rides on every note. magma's contract names THIS gate as the consumer it exists
+	// for: "The audit gate weights a candidate by how far to trust the map." It was parsed away
+	// entirely, so a dead-on-arrival candidate shipped with a declared, machine-readable
+	// false-positive mechanism (e.g. go-closure-edges: a function called only through a closure can
+	// appear unreachable) while the bar listed reflection/init/codegen/FFI and not closures.
+	Limitations []struct {
+		ID          string `json:"id"`
+		Effect      string `json:"effect"`
+		Description string `json:"description"`
+	} `json:"limitations"`
+	Rows []struct {
 		Symbol string `json:"symbol"`
 		File   string `json:"file"`
 		Line   int    `json:"line"`
@@ -509,15 +522,28 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 			"note as a statement about the evidence.", fidelity)
 	}
 
+	// magma declares, machine-readably, the ways its own analysis can be wrong. Those belong ON the
+	// bar the sweeper has to clear, not in a field nobody reads: a `dead-on-arrival` candidate from
+	// a backend that cannot see closure edges needs "check closures" in its refuter list.
+	limBar := ""
+	if len(dead.Limitations) > 0 {
+		var parts []string
+		for _, l := range dead.Limitations {
+			parts = append(parts, fmt.Sprintf("%s (%s): %s", l.ID, l.Effect, l.Description))
+		}
+		limBar = " DECLARED MAP LIMITATIONS — the producer says these can make this row wrong: " +
+			strings.Join(parts, " · ")
+	}
+
 	cands := []Candidate{}
 	if dead.ReachabilityComputable {
 		for _, r := range dead.Rows {
 			cands = append(cands, Candidate{Family: "A", Class: "dead-on-arrival",
-				Bar: bars["dead-on-arrival"] + fbar, Symbol: r.Symbol, File: r.File, Line: r.Line})
+				Bar: bars["dead-on-arrival"] + fbar + limBar, Symbol: r.Symbol, File: r.File, Line: r.Line})
 		}
 		for _, r := range docs["_test-only.json"].Rows {
 			cands = append(cands, Candidate{Family: "A", Class: "test-only",
-				Bar: bars["test-only"] + fbar, Symbol: r.Symbol, File: r.File, Line: r.Line})
+				Bar: bars["test-only"] + fbar + limBar, Symbol: r.Symbol, File: r.File, Line: r.Line})
 		}
 	}
 	if d := docs["_duplicates.json"]; d != nil {
@@ -609,6 +635,7 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 		MapProvenance: map[string]string{"generator": dead.Generator,
 			"contract_version": dead.ContractVersion},
 		NotComputableReason: dead.NotComputableReason,
+		MapLimitations:      limNames(dead.Limitations),
 		UnseededFamilies:    unseededFamilies, UnseededDetail: unseededDetail,
 		Candidates: cands, ProductionTotal: len(production), ProductionFiles: production,
 		ProductionUnclassified: nonNil(unclassified), HWorklist: nonNilW(work),
@@ -639,5 +666,19 @@ func (p *Plan) UnseededDetailValues() []string {
 		out = append(out, v)
 	}
 	sort.Strings(out)
+	return out
+}
+
+// limNames flattens the producer's declared limitations for the plan header, so they are visible
+// even on a plan that raised no candidates.
+func limNames(ls []struct {
+	ID          string `json:"id"`
+	Effect      string `json:"effect"`
+	Description string `json:"description"`
+}) []string {
+	out := make([]string, 0, len(ls))
+	for _, l := range ls {
+		out = append(out, l.ID+" ("+l.Effect+")")
+	}
 	return out
 }
