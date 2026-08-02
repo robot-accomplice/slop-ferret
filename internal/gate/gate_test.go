@@ -89,14 +89,25 @@ func TestRefusesOnWrongTreeSHA(t *testing.T) {
 	}
 }
 
-// A dirty-tree map stamps `<sha>+<diffhash>`, which can never equal a pinned commit. That is the
-// point: a dirty map reports in-flight code as dead, and its sha is disproportionately likely to
-// evaporate when commits are amended or rebased.
-func TestRefusesADirtyMapAndSaysSo(t *testing.T) {
-	m := writeMap(t, "abc123+dirty99", "codemap-rows/1", "rta", true, nil)
-	_, err := BuildPlan(m, "abc123", gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
-	if err == nil || !strings.Contains(err.Error(), "DIRTY-tree map") {
-		t.Fatalf("want a dirty-map refusal naming the cause, got %v", err)
+// THIS TEST USED TO ASSERT A FICTION, and that is why the bug survived.
+//
+// It fed sha="abc123+dirty99" — a shape real magma never produces — and asserted the refusal named
+// it as dirty. It passed for its whole life while the real dirty-map path went unguarded, because
+// the fixture was written from the same wrong belief as the code it tested. A test agreeing with a
+// bug is worse than no test: it certifies the belief.
+//
+// What is actually true: a sha that differs from the pinned one is refused as a MISMATCH (any
+// cause), and dirtiness is detected via `tree` — see TestADirtyMapIsRefusedViaTheTreeField.
+func TestAShaMismatchIsRefusedWhateverItLooksLike(t *testing.T) {
+	for _, sha := range []string{"abc123+dirty99", "OTHERSHA"} {
+		m := writeMap(t, sha, "codemap-rows/1", "rta", true, nil)
+		_, err := BuildPlan(m, "abc123", gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+		if err == nil || code(err) != ExitRefused {
+			t.Fatalf("sha=%q: want a refusal, got %v", sha, err)
+		}
+		if !strings.Contains(err.Error(), "different tree") {
+			t.Errorf("sha=%q: %v", sha, err)
+		}
 	}
 }
 
