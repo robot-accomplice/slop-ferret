@@ -642,3 +642,62 @@ func TestAMapWithNoTreeFieldIsAccepted(t *testing.T) {
 		t.Fatalf("a map without a tree field must be accepted: %v", err)
 	}
 }
+
+// A REFUSED MAP MUST NOT READ AS A CLEAN ONE.
+//
+// magma distinguishes rows:null (the analysis could not run) from rows:[] (it ran and found
+// nothing) and its contract calls that distinction load-bearing: "a refusal must never be mistaken
+// for 'found nothing'". This gate discarded it. Reproduced 2026-08-02 against a real refused map
+// (magma 0.1.0 has no Rust parser): the plan came back with 0 candidates, no reason, and family A
+// absent from unseeded_families — so a sweep could legitimately report family A checked-clean over
+// an analysis that never ran.
+func TestARefusedMapMarksFamilyANotSeededAndCarriesTheReason(t *testing.T) {
+	m := writeRefusedMap(t, "abc123", `language "rust" detected but its parser is not built yet`)
+	p, err := BuildPlan(m, "abc123", gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"}), "")
+	if err != nil {
+		t.Fatalf("a refusal is not a hard error — the H read still applies: %v", err)
+	}
+	if !contains(p.UnseededFamilies, "A") {
+		t.Errorf("family A was NOT computed, so it must be declared unseeded: %v", p.UnseededFamilies)
+	}
+	if p.NotComputableReason == "" {
+		t.Error("the reason magma refused must reach the plan; dropping it loses the WHY")
+	}
+	if !strings.Contains(strings.Join(p.UnseededDetailValues(), " "), "rust") {
+		t.Errorf("the unseeded detail for A must name the reason: %v", p.UnseededDetail)
+	}
+}
+
+// And the discharge must then be forced to acknowledge it, exactly as for D and E.
+func TestASweepOverARefusedMapCannotSettleWithoutDeclaringA(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	m := writeRefusedMap(t, "abc123", "no parser")
+	p, _ := BuildPlan(m, "abc123", repo, "")
+	res, code, _ := Verify(writeJSON(t, p), writeJSON(t, map[string]any{
+		"sha": "abc123", "read_paths": p.ProductionFiles,
+		"families_not_run": []string{"D", "E"}})) // A omitted on purpose
+	if code != ExitItemsOpen {
+		t.Fatalf("code=%d: omitting A must leave an item open", code)
+	}
+	if !strings.Contains(strings.Join(res.Remaining, " "), "A") {
+		t.Errorf("remaining must name family A: %v", res.Remaining)
+	}
+}
+
+func writeRefusedMap(t *testing.T, sha, reason string) string {
+	t.Helper()
+	d := filepath.Join(t.TempDir(), "m", ".magma")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"_dead.json", "_test-only.json"} {
+		body := map[string]any{"contract_version": "codemap-rows/1", "generator": "magma/0.1.0",
+			"sha": sha, "tree": sha, "fidelity": "", "reachability_computable": false,
+			"not_computable_reason": reason, "rows": nil}
+		b, _ := json.Marshal(body)
+		if err := os.WriteFile(filepath.Join(d, n), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Dir(d)
+}
