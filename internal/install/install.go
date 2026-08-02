@@ -164,11 +164,25 @@ func linkTargets(p paths) map[string]string {
 	return out
 }
 
-func relink(link, target string) error {
+// relink points a command entry at the deployed skill.
+//
+// It replaces a SYMLINK freely — that is ours, and repointing it is the whole job. It refuses to
+// replace a REGULAR FILE unless forced: that is somebody's own hand-written command, and deleting
+// it is data loss with no warning.
+//
+// Found by sweeping this repo with its own method. `Install` went to real lengths to refuse
+// clobbering a hand-edited file in the skill tree and gave the command entries — which live outside
+// that tree — no protection at all. A guard applied where the author was looking rather than to the
+// class is the lexicon's `Sited guard`, and this was one.
+func relink(link, target string, force bool) error {
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		return err
 	}
-	if _, err := os.Lstat(link); err == nil {
+	if fi, err := os.Lstat(link); err == nil {
+		if fi.Mode()&os.ModeSymlink == 0 && !force {
+			return fmt.Errorf("%s exists and is not a symlink this installer created — refusing "+
+				"to delete it. Move it aside, or re-run with --force to overwrite it", link)
+		}
 		if err := os.Remove(link); err != nil {
 			return err
 		}
@@ -239,7 +253,7 @@ func Install(w io.Writer, src Source, force bool) int {
 	}
 
 	for link, target := range linkTargets(p) {
-		if err := relink(link, target); err != nil {
+		if err := relink(link, target, force); err != nil {
 			fmt.Fprintf(w, "slop-ferret: linking %s: %v\n", link, err)
 			return 2
 		}
