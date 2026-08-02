@@ -5,8 +5,8 @@
 // before the Python was deleted. The measured constants below came from real repositories and are
 // carried across unchanged — a port is the easiest place to quietly lose a measurement.
 //
-//	slop-ferret plan   <magma-map-dir> <pinned-sha> <repo> [--since <ref>]  > plan.json
-//	slop-ferret verify <plan.json> <discharge.json>          ; 0 settled, 3 items open
+//	ferret plan   <magma-map-dir> <pinned-sha> <repo> [--since <ref>]  > plan.json
+//	ferret enumerate <plan.json> <discharge.json>          ; 0 accounted, 3 items open, 4 refused
 //
 // THIS IS A TOOL FOR THE PERSON RUNNING THE SWEEP. It is not an evaluation of them and not a
 // compliance mechanism: nobody is graded by its output, there is no adversary to design against,
@@ -488,7 +488,7 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"map). For each candidate, clear its `bar` before filing. Then write a discharge.json {sha, " +
 	"read_paths:[...], families_not_run:[...], coverage_waived:[...], " +
 	"candidates_filed:[{file,symbol}], candidates_cleared:[{file,symbol}], " +
-	"candidates_refuted:[{file,symbol}]} and run `slop-ferret verify`. `coverage_waived` entries may be " +
+	"candidates_refuted:[{file,symbol}]} and run `ferret enumerate`. `coverage_waived` entries may be " +
 	"a bare path or {path, reason} — a reason is OPTIONAL. Waiving is cheap on purpose: deciding " +
 	"not to read a file is a normal, correct move and should cost nothing. It settles the " +
 	"ACCOUNTING and leaves `coverage.repo` alone, because a waived file genuinely was not read " +
@@ -501,7 +501,7 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"leaving it out of both is not a clean sweep, it is an unfinished one. `families_not_run` " +
 	"MUST list every family in unseeded_families."
 
-// BuildPlan is `slop-ferret plan`.
+// BuildPlan is `ferret plan`.
 func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 	docs, unseeded, err := loadMap(mapdir, pinnedSHA)
 	if err != nil {

@@ -14,13 +14,13 @@
 // denied. A distribution defect presenting as a safety one, and hand-installation produced it:
 // someone linked one of the two entries, once, and nothing ever checked for the other.
 //
-// The skill is EMBEDDED in the binary rather than read from a checkout, which is what makes the
-// upgrade path a single line:
+// NO PROSE IS COMPILED INTO THE BINARY. `install` acquires the skill — from the repository at the
+// tag matching this binary's version, from an explicit `--ref`, or from a `--from` checkout. That
+// makes the two release cadences structural rather than conventional: a binary that cannot carry
+// prose cannot re-couple them by accident.
 //
-//	go install github.com/robot-accomplice/slop-ferret@latest && slop-ferret install
-//
-// Direction of truth: edit in the repo, build, install. `slop-ferret doctor` catches the case where the
-// hand edited the deployed copy instead — which is the common mistake, not a hypothetical.
+// Direction of truth: edit in the repo, install. `ferret doctor` catches the case where the hand
+// edited the deployed copy instead — which is the common mistake, not a hypothetical.
 package install
 
 import (
@@ -110,7 +110,7 @@ func readManifest(p paths) manifest {
 	return m
 }
 
-// state of one deployed file relative to the embedded copy.
+// state of one deployed file relative to the source being installed from.
 type state int
 
 const (
@@ -216,7 +216,7 @@ func Install(w io.Writer, src Source, force bool) int {
 	sort.Strings(local)
 
 	if len(local) > 0 && !force {
-		fmt.Fprintf(w, "ferret install: REFUSING — these deployed files differ from the embedded "+
+		fmt.Fprintf(w, "ferret install: REFUSING — these deployed files differ from the source "+
 			"copy and were not written by this installer, so they were edited in place:\n\n")
 		for _, rel := range local {
 			fmt.Fprintf(w, "  %s\n", rel)
@@ -226,6 +226,26 @@ func Install(w io.Writer, src Source, force bool) int {
 		fmt.Fprintf(w, "    diff %s <repo>/skill/%s\n",
 			filepath.Join(p.dest, filepath.FromSlash(local[0])), local[0])
 		return 3
+	}
+
+	// PRE-FLIGHT EVERY PREDICTABLE FAILURE BEFORE THE FIRST WRITE.
+	//
+	// Content was written first, links second, manifest third. A user who owned
+	// ~/.claude/commands/slop-ferret.md got an abort with the tree already deployed and no
+	// manifest — so the NEXT install saw every file as edited-in-place and told them their own
+	// edits were at risk, about files ferret had written itself 200ms earlier. The refusal was
+	// correct and its timing made the tool lie.
+	//
+	// Checking link targets here means the common abort happens before anything is on disk.
+	if !force {
+		for link := range linkTargets(p) {
+			if fi, err := os.Lstat(link); err == nil && fi.Mode()&os.ModeSymlink == 0 {
+				fmt.Fprintf(w, "ferret install: REFUSING — %s exists and is not a symlink this "+
+					"installer created. Nothing has been written. Move it aside, or re-run with "+
+					"--force to overwrite it.\n", link)
+				return 3
+			}
+		}
 	}
 
 	files, _ := srcFiles(src)
@@ -254,7 +274,7 @@ func Install(w io.Writer, src Source, force bool) int {
 
 	for link, target := range linkTargets(p) {
 		if err := relink(link, target, force); err != nil {
-			fmt.Fprintf(w, "slop-ferret: linking %s: %v\n", link, err)
+			fmt.Fprintf(w, "ferret: linking %s: %v\n", link, err)
 			return 2
 		}
 	}
@@ -313,7 +333,7 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 					"deployed copy edited in place: %s (your change is NOT in the repo)", rel))
 			case stStale:
 				problems = append(problems, fmt.Sprintf(
-					"out of date: %s (the source is newer — run `slop-ferret update`)", rel))
+					"out of date: %s (the source is newer — run `ferret update`)", rel))
 			case stMissing:
 				problems = append(problems, fmt.Sprintf("missing from the deployment: %s", rel))
 			}

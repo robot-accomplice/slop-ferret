@@ -20,12 +20,12 @@ just build
 **Edit the repo, then install. Never edit the deployed copy.**
 
 ```
-edit skill/ or the Go source   ->   just install && slop-ferret install --from .
+edit skill/ or the Go source   ->   just install && ferret install --from .
 ```
 
 The deployed skill lives in `~/.claude/skills/slop-ferret/`. Editing it there puts your change
 somewhere no version control can see, and the next install would silently overwrite it. `install`
-refuses to clobber a file it did not write and prints what would be lost; `slop-ferret doctor`
+refuses to clobber a file it did not write and prints what would be lost; `ferret doctor`
 reports the same drift and names the file. If doctor says *"edited in place"*, your work is in the
 deployed copy and not in the repo.
 
