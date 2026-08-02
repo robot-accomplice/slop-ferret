@@ -237,7 +237,7 @@ corroborates it. Attestation is still worth requiring, because it makes an omiss
 made rather than a gap nobody owns. Do not let the gate's exit code stand in for the reading.
 
 **If the domain vocabulary misses your repo, extend it.** `enumerate_h_worklist` is path-based and
-therefore domain-bound: add `reason: regex` lines to `.slop-h-signals` in the target repo and re-plan.
+therefore domain-bound: add the word to the lexicon's `h-signals` block and reinstall the skill, or add `reason: regex` lines to `.slop-h-signals` in the target repo, then re-plan.
 An empty worklist is a hard stop, never a clean result — `ghola` enumerated zero H-paths as an HTTP
 client because the vocabulary had no network terms, and a short worklist reads as a clean repo.
 

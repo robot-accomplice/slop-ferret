@@ -78,24 +78,28 @@ type signal struct {
 	rx     *regexp.Regexp
 }
 
-// SignalsPath is where the vocabulary lives: a file in the DEPLOYED SKILL, not a table compiled
-// into this binary.
+// LexiconPath is where the vocabulary lives: the lexicon in the DEPLOYED SKILL, not a table
+// compiled into this binary.
 //
-// The vocabulary is prose — domain words, guessed against names the target's own authors chose —
-// and prose iterates far faster than code. Compiling it in meant a word learned from a sweep needed
-// a binary release to reach the next one, which is the same coupling the skill/binary split exists
-// to remove. Now: add a word, reinstall the skill, done.
+// THE SIGNALS ARE PART OF THE LEXICON. The lexicon's tables define what a class IS; the signals
+// define where that class tends to LIVE. Both are the method's domain language, both are guesses
+// that improve by use, and both are now covered by the lexicon's own `version:` — which the signals
+// were not when they sat in a file of their own, with no version at all.
+//
+// Being prose, they iterate far faster than code. Compiling them in meant a word learned from one
+// sweep needed a binary release to reach the next, which is the coupling the skill/binary split
+// exists to remove. Now: add a word to the lexicon, reinstall the skill, done.
 //
 // It is A HINT, NOT A COMPLETENESS SIGNAL. Measured across five real repositories on 2026-08-02:
-// 59% label precision, 20% of production files matched, and 0-of-6 recall on the files that
-// actually produced findings. What makes the miss safe is not the vocabulary's quality — it is that
-// a file no signal reaches is reported as UNREAD rather than as clean.
-var SignalsPath = func() string {
+// 59% label precision, 20% of production files matched, 0-of-6 recall on the files that actually
+// produced findings. What makes the miss safe is not the vocabulary's quality — it is that a file
+// no signal reaches is reported as UNREAD rather than as clean.
+var LexiconPath = func() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".claude", "skills", "slop-ferret", "references", "h-signals")
+	return filepath.Join(home, ".claude", "skills", "slop-ferret", "references", "ai-slop-lexicon.md")
 }
 
 // Tier 1 is the blast-radius set; tier 2 is the volume set. A SEMANTIC split, not a top-N cap: a
@@ -251,8 +255,8 @@ type rowDoc struct {
 
 func loadSignals(repo string) []signal {
 	src := [][2]string{}
-	if p := SignalsPath(); p != "" {
-		src = append(src, parseSignalFile(p)...)
+	if p := LexiconPath(); p != "" {
+		src = append(src, parseLexiconSignals(p)...)
 	}
 	// Path-based H enumeration is vocabulary-bound; a project whose domain terms are missing must
 	// be able to add them rather than silently get a short worklist.
@@ -656,9 +660,36 @@ func limNames(ls []struct {
 	return out
 }
 
-// parseSignalFile reads `reason: regex` lines. A missing file is not an error: the vocabulary is
-// optional by construction, and an empty worklist is already a hard stop in `enumerate` — which
-// says what to do about it far better than a parse error here would.
+// parseLexiconSignals extracts the ```h-signals fenced block from the lexicon. Reading it out of the
+// markdown rather than from a sidecar keeps ONE artifact with ONE version: a reader editing a class
+// definition sees the paths that class lives on, in the same file.
+func parseLexiconSignals(path string) [][2]string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var fenced []string
+	in := false
+	for _, line := range strings.Split(string(b), "\n") {
+		t := strings.TrimSpace(line)
+		if !in {
+			if t == "```h-signals" {
+				in = true
+			}
+			continue
+		}
+		if strings.HasPrefix(t, "```") {
+			break
+		}
+		fenced = append(fenced, line)
+	}
+	return parseSignalLines(strings.Join(fenced, "\n"))
+}
+
+// parseSignalFile reads a bare `reason: regex` file — the per-repo `.slop-h-signals` extension.
+// A missing file is not an error: the vocabulary is optional by construction, and an empty worklist
+// is already a hard stop in `enumerate`, which says what to do about it far better than a parse
+// error here would.
 func parseSignalFile(path string) [][2]string {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
@@ -668,8 +699,12 @@ func parseSignalFile(path string) [][2]string {
 	if err != nil {
 		return nil
 	}
+	return parseSignalLines(string(b))
+}
+
+func parseSignalLines(body string) [][2]string {
 	var out [][2]string
-	for _, line := range strings.Split(string(b), "\n") {
+	for _, line := range strings.Split(body, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, ":") {
 			continue
