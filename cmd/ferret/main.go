@@ -189,8 +189,15 @@ func cmdVerify(args []string, stdout, stderr io.Writer) int {
 		repo = args[2]
 	}
 	res, path, code, err := gate.VerifyAndRecord(args[0], args[1], repo, record)
-	if err != nil {
+	// A record failure must NOT discard the verify result the operator already earned, and must not
+	// masquerade as misuse. Warn and carry on with the real exit code. (ABORT M2: this returned
+	// exit 2 with empty stdout at the most expensive moment of a sweep — the end.)
+	if err != nil && res == nil {
 		return fail(err, stderr)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "ferret: warning: %v\n", err)
+		fmt.Fprintln(stderr, "  the verify result below still stands; only the record was not written")
 	}
 	b, _ := json.MarshalIndent(res, "", " ")
 	fmt.Fprintln(stdout, string(b))

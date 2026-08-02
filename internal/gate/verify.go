@@ -114,6 +114,12 @@ func VerifyAndRecord(planPath, dischargePath, repo string, record bool) (*Result
 	if err != nil || !record || repo == "" {
 		return res, "", code, err
 	}
+	// An unfinished sweep simply does not produce a record. That is the normal case, not a failure:
+	// records exist to be trusted by a LATER sweep, and only a settled one has established anything.
+	// Returning an error here would make an ordinary in-progress sweep look broken.
+	if res.Status != "settled" {
+		return res, "", code, nil
+	}
 	pl, dis, lerr := loadPlanAndDischarge(planPath, dischargePath)
 	if lerr != nil {
 		return res, "", code, nil

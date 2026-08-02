@@ -320,32 +320,42 @@ func TestVerifyOnAMalformedPlanIsMisuse(t *testing.T) {
 	}
 }
 
-// A record that cannot be written must surface rather than vanish.
-func TestVerifySurfacesARecordFailure(t *testing.T) {
+// SUPERSEDED by TestARecordFailureKeepsTheVerifyResultAndTheRealExitCode below. The old test
+// asserted that an UNSETTLED sweep surfaces a record failure; after the ABORT I1 fix an
+// unsettled sweep no longer attempts a record at all — that is the normal case, not a
+// failure — so the premise no longer exists.
+
+// ABORT M2. A record failure must not discard the verify result or masquerade as misuse: it happens
+// at the END of a sweep, which is the most expensive moment to lose one.
+func TestARecordFailureKeepsTheVerifyResultAndTheRealExitCode(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	repo, pp, dp, _ := verifyFixture(t)
-	var pl map[string]any
-	b, err := os.ReadFile(pp)
-	if err != nil {
-		t.Fatal(err)
+	for _, f := range []string{pp, dp} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		m["sha"] = "0000000000000000000000000000000000000000"
+		nb, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, nb, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := json.Unmarshal(b, &pl); err != nil {
-		t.Fatal(err)
+	code, out, errs := runCLI(t, "verify", pp, dp, repo)
+	if code == gate.ExitMisuse {
+		t.Errorf("a record failure is not misuse: code=%d err=%s", code, errs)
 	}
-	pl["sha"] = "0000000000000000000000000000000000000000" // will not resolve
-	nb, err := json.Marshal(pl)
-	if err != nil {
-		t.Fatal(err)
+	if out == "" {
+		t.Error("the verify result must still be printed")
 	}
-	if err := os.WriteFile(pp, nb, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	code, _, errs := runCLI(t, "verify", pp, dp, repo)
-	if code == gate.ExitOK {
-		t.Fatal("an unwritable record must not report success")
-	}
-	if !strings.Contains(errs, "record") {
-		t.Errorf("the record failure must be named: %q", errs)
+	if !strings.Contains(errs, "warning") {
+		t.Errorf("the record failure must be surfaced as a warning: %q", errs)
 	}
 }
