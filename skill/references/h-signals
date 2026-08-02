@@ -1,0 +1,29 @@
+# H signals — the reading-order vocabulary.
+#
+# FORMAT: one `reason: regex` per line. Blank lines and # comments ignored. A signal matches a
+# path at its start, at a segment start, or after a word separator inside a filename.
+#
+# THIS IS A HINT, NOT A COMPLETENESS SIGNAL. Measured across five real repositories on 2026-08-02:
+# 59% label precision, 20% of production files matched, and 0-of-6 recall on the files that
+# actually produced findings. It guesses semantics from names the TARGET's authors chose, so it
+# works when they happen to have used one of these words and not otherwise. A file no signal
+# reaches is reported as UNREAD, never as clean — that is what makes the miss safe.
+#
+# IT LIVES HERE, NOT IN THE BINARY, SO IT CAN BE ITERATED FROM USAGE. Add a word after a sweep
+# that missed something and reinstall the skill; no binary release is involved. Extend per-repo
+# with a `.slop-h-signals` file in the target, same format.
+#
+# BEFORE ADDING A WORD: the tables are coupled to the tier split. Adding a term to a tier-1 group
+# can move a file into the required tier. Measured: adding `ratelimit` to money/value matched
+# ghola's internal/client/ratelimit.go, taking it from 10 required to 1 and deferring 9 files on a
+# repo readable in one pass. Every test passed. Re-measure on real repos after any edit here.
+
+money/value: pay|payment|ledger|billing|invoice|wallet|treasury|balance|settle|revenue|refund|x402|transfer|mint|burn|stake|slash|reward|supply|escrow|vault|fee|gas|price|swap|exchange|liquidity|collateral|financial|fund|cost|charge|spend|budget|quota|credit|debit|ratelimit|throttle
+consensus/ordering: consensus|validator|block|blockchain|mempool|finality|fork|quorum|bft|raft|paxos|leader|proposer|commit_reveal|ordering|nonce|frontrun|mev|reorg|slot|epoch
+auth/session: auth|session|login|token|oauth|jwt|permission|acl|rbac|capability|tenant|policy|authority|approval|denial|consent|grant|privilege|role
+crypto/signing: crypto|sign|signature|keypair|secp|ecdsa|ed25519|hmac|cipher|encrypt|decrypt|seed|mnemonic|merkle|hash|zk|proof|commitment|nullifier
+arithmetic/overflow: checked_arith|safe_math|overflow|saturating|decimal|precision|rounding
+migration: migrat|schema_version|alembic|flyway|goose
+persistence/state: repo|repository|store|dao|dal|persist|database|state|account|utxo|trie|db|sql|journal|wal
+untrusted-parse: parse|parser|deserial|unmarshal|decode|webhook|ingest|codec|rpc|api
+network/untrusted-io: client|http|fetch|request|response|header|cookie|redirect|tls|ssl|cert|proxy|socket|dial|stream|download|upload|url|uri|host|dns|transport

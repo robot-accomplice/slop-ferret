@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -709,4 +710,141 @@ func writeJSONRaw(t *testing.T, b []byte) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+// The vocabulary lives in the deployed skill, not in this binary, so it can be iterated from usage
+// feedback without a binary release. These tests pin that: the file is the source, and the binary
+// carries no fallback table that could silently disagree with it.
+func TestTheVocabularyComesFromTheSkillNotTheBinary(t *testing.T) {
+	dir := t.TempDir()
+	sig := filepath.Join(dir, "h-signals")
+	if err := os.WriteFile(sig, []byte("# a comment\n\ndomain/widget: (widget|sprocket)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := SignalsPath
+	SignalsPath = func() string { return sig }
+	defer func() { SignalsPath = old }()
+
+	repo := gitRepo(t, map[string]string{
+		"internal/widget/shape.go": "package w\n",
+		"internal/wallet/pay.go":   "package p\n", // built-in money word — must NOT match now
+	})
+	p := planFor(t, repo)
+	if len(p.HWorklist) != 1 || p.HWorklist[0].Reason != "domain/widget" {
+		t.Fatalf("the file is the only source of signals: %+v", p.HWorklist)
+	}
+	if !contains(p.HUnmatched, "internal/wallet/pay.go") {
+		t.Error("with no built-in table, a money-shaped path must be unmatched, not silently matched")
+	}
+}
+
+// A missing vocabulary is not an error here — it produces an empty worklist, and the empty-worklist
+// stop in enumerate says what to do about it far better than a parse error would.
+func TestAMissingVocabularyYieldsAnEmptyWorklistNotAFailure(t *testing.T) {
+	old := SignalsPath
+	SignalsPath = func() string { return filepath.Join(t.TempDir(), "absent") }
+	defer func() { SignalsPath = old }()
+
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package p\n"})
+	p := planFor(t, repo)
+	if len(p.HWorklist) != 0 {
+		t.Errorf("no vocabulary should mean no ranking: %+v", p.HWorklist)
+	}
+	if len(p.HUnmatched) != 1 {
+		t.Errorf("every production file should still be raised: %v", p.HUnmatched)
+	}
+	// And the sweep cannot then quietly complete.
+	_, code, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
+		"sha": p.SHA, "read_paths": p.ProductionFiles, "families_not_run": p.UnseededFamilies}))
+	if err != nil || code != ExitItemsOpen {
+		t.Errorf("an empty worklist must stop the sweep: code=%d err=%v", code, err)
+	}
+}
+
+// The shipped vocabulary must parse and every entry must compile — a typo in a regex would silently
+// drop a whole signal class.
+func TestTheShippedVocabularyParsesAndCompiles(t *testing.T) {
+	got := parseSignalFile(filepath.Join(repoRoot(t), "skill", "references", "h-signals"))
+	if len(got) < 5 {
+		t.Fatalf("shipped vocabulary looks empty: %d entries", len(got))
+	}
+	for _, pair := range got {
+		if _, err := regexp.Compile(`(?i)` + anchor + `(` + pair[1] + `)`); err != nil {
+			t.Errorf("signal %q does not compile: %v", pair[0], err)
+		}
+	}
+}
+
+// CONDITION 8. The tier split's behaviour is now RE-DERIVABLE by someone who was not there.
+//
+// gate.go instructed "re-measure required/deferred on real repos after any edit here" and cited
+// repositories that are private, unpinned, and in one case a sha that no longer resolves — an
+// unfollowable instruction. Meanwhile README and the C4 doc both claimed "the measurements live in
+// comments beside the tests that pin them", and no test pinned hDeferFloor at all: lowering it kept
+// CI green.
+//
+// This pins the three constants that decide the split, against a committed fixture.
+func TestTheTierSplitIsReDerivableFromAFixture(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "tier-split-fixture.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			files[l] = "package x\n"
+		}
+	}
+	if len(files) != 70 {
+		t.Fatalf("fixture has %d paths, expected 70", len(files))
+	}
+	p := planFor(t, gitRepo(t, files))
+
+	if len(p.HWorklist) <= hDeferFloor {
+		t.Fatalf("fixture (%d matched) must exceed hDeferFloor (%d) or the split never engages",
+			len(p.HWorklist), hDeferFloor)
+	}
+	if len(p.HRequired) != 40 || len(p.HDeferred) != 30 {
+		t.Errorf("split = %d required / %d deferred, want 40/30. If you changed hSignalSrc, "+
+			"hTier1, hTier2, hDeferFloor or anchor, this is the measurement that moved — "+
+			"re-derive it deliberately rather than updating the number to match",
+			len(p.HRequired), len(p.HDeferred))
+	}
+	for _, w := range p.HRequired {
+		if hTier2[w.Reason] {
+			t.Errorf("tier-2 reason %q leaked into the required tier", w.Reason)
+		}
+	}
+}
+
+// hDeferFloor is a judgement, but its EFFECT is testable: at or below it, nothing is deferred.
+func TestBelowTheDeferFloorNothingIsDeferred(t *testing.T) {
+	files := map[string]string{}
+	for i := 0; i < 10; i++ {
+		files[fmt.Sprintf("internal/wallet/pay%02d.go", i)] = "package x\n"
+	}
+	p := planFor(t, gitRepo(t, files))
+	if len(p.HWorklist) > hDeferFloor {
+		t.Skip("fixture unexpectedly large")
+	}
+	if len(p.HDeferred) != 0 || len(p.HRequired) != len(p.HWorklist) {
+		t.Errorf("at or below the floor everything is required: %d/%d",
+			len(p.HRequired), len(p.HDeferred))
+	}
+}
+
+// Tests must not depend on what happens to be installed on the machine running them. SignalsPath
+// defaults to the DEPLOYED skill, which is correct at runtime and non-hermetic in a test: a
+// developer with no skill installed, or an older one, would get different results from CI.
+//
+// So the suite pins the vocabulary to the copy shipped in THIS repo. That also makes every
+// tier-split assertion below a statement about the shipped vocabulary rather than about a machine.
+func TestMain(m *testing.M) {
+	if root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
+		shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "h-signals")
+		if _, err := os.Stat(shipped); err == nil {
+			SignalsPath = func() string { return shipped }
+		}
+	}
+	os.Exit(m.Run())
 }

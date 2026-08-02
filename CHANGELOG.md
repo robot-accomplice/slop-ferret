@@ -45,6 +45,30 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
   mandated and the code had never done.
 
 ### Fixed
+
+- **The dirty-map refusal had never once fired.** It compared `sha`; magma puts the marker in
+  `tree`. The safety property the whole pinned-SHA discipline rests on was prose for its entire
+  life, and a unit test had asserted the wrong behaviour using a fixture shape magma never produces.
+- **A refused map read as a clean one.** magma distinguishes `rows: null` (could not run) from
+  `rows: []` (ran, found nothing); the gate discarded the distinction, so a refusal produced a plan
+  with zero candidates and family A absent from `unseeded_families`.
+- **Arbitrary file write outside the records root.** The audited repository's `origin` URL was used
+  as a path key with no containment check; `filepath.Join` cleans after joining, so `..` escaped.
+  Escalated in review to overwriting a file in `~/.claude`.
+- **Records persisted claims from sweeps that established nothing** — a run that read zero files and
+  exited 3 could record two classes clean with an empty method, which the next sweep was told to
+  trust.
+- **`install` destroyed a user's own `~/.claude/commands/slop-ferret.md`** without warning, and a
+  refused install left the tree deployed but unmanifested, so the *next* install accused the user of
+  editing files ferret had written itself.
+- **The fidelity table carried four values magma never emits** and lacked `semantic`, so every Rust
+  candidate was labelled weakest-evidence. **`limitations` was parsed away** despite magma's contract
+  naming this gate as the consumer it exists for. **`plan.Contract` was written and never read.**
+- **A record failure discarded the enumerate result** and reported exit 2 (misuse) for a sweep that
+  was merely unfinished.
+- **`pct` rounded**, so 1999/2000 rendered as `100.0%`.
+- **Stale prose in `internal/` and `cmd/`** — including the `instructions` string emitted into every
+  `plan.json`, telling agents to run a command that does not exist. Now a build gate.
 - `update` recorded provenance as `repo@main (main)` — it read the "sha" from the archive's
   top-level directory, which for a branch is named after the branch. The recorded resolution was a
   restatement of the input, and the comment claiming otherwise was a fabricated claim shipped

@@ -78,42 +78,24 @@ type signal struct {
 	rx     *regexp.Regexp
 }
 
-// family-H is found by READING, not scanning, so the map cannot seed it. These path/name signals
-// RANK the reading order; they no longer decide whether a file is looked at, because the
-// complement is enumerated too.
+// SignalsPath is where the vocabulary lives: a file in the DEPLOYED SKILL, not a table compiled
+// into this binary.
 //
-// BEFORE YOU ADD A WORD HERE: these tables are COUPLED to the tier floor below. Adding a term to
-// a tier-1 group can move a file into the required tier. Measured 2026-08-01: adding `ratelimit`
-// to money/value matched ghola's internal/client/ratelimit.go, which defeated a zero-check floor
-// and took ghola from 10 required to 1, deferring 9 files on a repo readable in one pass. EVERY
-// TEST PASSED. Re-measure required/deferred on real repos after any edit here.
-var hSignalSrc = [][2]string{
-	// `financial|fund|spend|budget|quota|ratelimit` added 2026-08-01: roboticus's
-	// engine_financial_config_rules.go — a FINANCIAL RULES ENGINE — matched nothing, because a
-	// money vocabulary listing pay|ledger|billing|fee|gas|price does not contain "financial".
-	{"money/value", `pay|payment|ledger|billing|invoice|wallet|treasury|balance|settle|revenue|` +
-		`refund|x402|transfer|mint|burn|stake|slash|reward|supply|escrow|vault|` +
-		`fee|gas|price|swap|exchange|liquidity|collateral|financial|fund|cost|` +
-		`charge|spend|budget|quota|credit|debit|ratelimit|throttle`},
-	{"consensus/ordering", `consensus|validator|block|blockchain|mempool|finality|fork|quorum|` +
-		`bft|raft|paxos|leader|proposer|commit_reveal|ordering|nonce|frontrun|mev|reorg|slot|epoch`},
-	// `policy|authority|...` added 2026-08-01: roboticus's internal/agent/policy/ is 15 production
-	// files of authorization logic and matched NOTHING, because an auth vocabulary listing
-	// auth|acl|rbac does not contain the word "policy".
-	{"auth/session", `auth|session|login|token|oauth|jwt|permission|acl|rbac|capability|tenant|` +
-		`policy|authority|approval|denial|consent|grant|privilege|role`},
-	{"crypto/signing", `crypto|sign|signature|keypair|secp|ecdsa|ed25519|hmac|cipher|encrypt|` +
-		`decrypt|seed|mnemonic|merkle|hash|zk|proof|commitment|nullifier`},
-	{"arithmetic/overflow", `checked_arith|safe_math|overflow|saturating|decimal|precision|rounding`},
-	{"migration", `migrat|schema_version|alembic|flyway|goose`},
-	{"persistence/state", `repo|repository|store|dao|dal|persist|database|state|account|utxo|` +
-		`trie|db|sql|journal|wal`},
-	{"untrusted-parse", `parse|parser|deserial|unmarshal|decode|webhook|ingest|codec|rpc|api`},
-	// Added 2026-08-01. ghola @4f33b3c — a pre-registered control repo — enumerated ZERO H-paths
-	// and so could never reach a verdict, because an HTTP fetch client whose whole surface is
-	// parsing untrusted remote responses matched none of the vocabulary above.
-	{"network/untrusted-io", `client|http|fetch|request|response|header|cookie|redirect|tls|` +
-		`ssl|cert|proxy|socket|dial|stream|download|upload|url|uri|host|dns|transport`},
+// The vocabulary is prose — domain words, guessed against names the target's own authors chose —
+// and prose iterates far faster than code. Compiling it in meant a word learned from a sweep needed
+// a binary release to reach the next one, which is the same coupling the skill/binary split exists
+// to remove. Now: add a word, reinstall the skill, done.
+//
+// It is A HINT, NOT A COMPLETENESS SIGNAL. Measured across five real repositories on 2026-08-02:
+// 59% label precision, 20% of production files matched, and 0-of-6 recall on the files that
+// actually produced findings. What makes the miss safe is not the vocabulary's quality — it is that
+// a file no signal reaches is reported as UNREAD rather than as clean.
+var SignalsPath = func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude", "skills", "slop-ferret", "references", "h-signals")
 }
 
 // Tier 1 is the blast-radius set; tier 2 is the volume set. A SEMANTIC split, not a top-N cap: a
@@ -268,22 +250,13 @@ type rowDoc struct {
 }
 
 func loadSignals(repo string) []signal {
-	src := append([][2]string{}, hSignalSrc...)
+	src := [][2]string{}
+	if p := SignalsPath(); p != "" {
+		src = append(src, parseSignalFile(p)...)
+	}
 	// Path-based H enumeration is vocabulary-bound; a project whose domain terms are missing must
 	// be able to add them rather than silently get a short worklist.
-	extra := filepath.Join(repo, ".slop-h-signals")
-	if fi, err := os.Lstat(extra); err == nil && fi.Mode().IsRegular() {
-		if b, err := os.ReadFile(extra); err == nil {
-			for _, line := range strings.Split(string(b), "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, ":") {
-					continue
-				}
-				parts := strings.SplitN(line, ":", 2)
-				src = append(src, [2]string{strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])})
-			}
-		}
-	}
+	src = append(src, parseSignalFile(filepath.Join(repo, ".slop-h-signals"))...)
 	out := make([]signal, 0, len(src))
 	for _, p := range src {
 		rx, err := regexp.Compile(`(?i)` + anchor + `(` + p[1] + `)`)
@@ -679,6 +652,34 @@ func limNames(ls []struct {
 	out := make([]string, 0, len(ls))
 	for _, l := range ls {
 		out = append(out, l.ID+" ("+l.Effect+")")
+	}
+	return out
+}
+
+// parseSignalFile reads `reason: regex` lines. A missing file is not an error: the vocabulary is
+// optional by construction, and an empty worklist is already a hard stop in `enumerate` — which
+// says what to do about it far better than a parse error here would.
+func parseSignalFile(path string) [][2]string {
+	fi, err := os.Lstat(path)
+	if err != nil || !fi.Mode().IsRegular() {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out [][2]string
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, ":") {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		reason, rx := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		if reason == "" || rx == "" {
+			continue
+		}
+		out = append(out, [2]string{reason, rx})
 	}
 	return out
 }
