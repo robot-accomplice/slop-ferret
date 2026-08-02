@@ -80,8 +80,8 @@ func run(argv []string, stdout, stderr io.Writer) int {
 			if len(sha) > 12 {
 				sha = sha[:12]
 			}
-			fmt.Fprintf(stdout, "%s  %s  repo %s  plan %s  %s\n",
-				r.Date, sha, r.CoverageRepo, r.CoveragePlan, r.Status)
+			fmt.Fprintf(stdout, "%s  %s  stated-read %s  plan %s  %s\n",
+				r.Date, sha, r.AttestedRepo, r.AttestedPlan, r.Accounting)
 		}
 		return gate.ExitOK
 	case "doctor":
@@ -188,7 +188,7 @@ func cmdVerify(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 3 {
 		repo = args[2]
 	}
-	res, path, code, err := gate.VerifyAndRecord(args[0], args[1], repo, record)
+	res, path, code, err := gate.EnumerateAndRecord(args[0], args[1], repo, record)
 	// A record failure must NOT discard the verify result the operator already earned, and must not
 	// masquerade as misuse. Warn and carry on with the real exit code. (ABORT M2: this returned
 	// exit 2 with empty stdout at the most expensive moment of a sweep — the end.)

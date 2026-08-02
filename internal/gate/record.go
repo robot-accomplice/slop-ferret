@@ -35,13 +35,13 @@ var unsafeKeySegment = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 type Record struct {
 	SHA           string `json:"sha"`
 	Date          string `json:"date"`
-	CoverageRepo  string `json:"coverage_repo"`
-	CoveragePlan  string `json:"coverage_plan"`
+	AttestedRepo  string `json:"attested_repo"`
+	AttestedPlan  string `json:"attested_plan"`
 	Denominator   int    `json:"denominator"`
 	Waived        int    `json:"waived"`
 	WorklistSize  int    `json:"worklist_size"`
 	UnmatchedSize int    `json:"unmatched_size"`
-	Status        string `json:"status"`
+	Accounting    string `json:"accounting"`
 
 	Tier              string         `json:"tier,omitempty"`
 	FamiliesNotRun    []string       `json:"families_not_run,omitempty"`
@@ -128,10 +128,10 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 	// established anything, so persisting its claims is the persistence layer converting an
 	// unperformed audit into a completed-looking one — the exact invariant this tool defends.
 	// (ABORT I1, the review's designated "one fix".)
-	if res.Status != "settled" {
-		return "", fmt.Errorf("this sweep did not settle (status %q) — refusing to record claims "+
+	if res.Accounting != "complete" {
+		return "", fmt.Errorf("this sweep has an incomplete accounting (%q) — refusing to record claims "+
 			"a later sweep would skip ground on. Close the remaining items first, or re-run with "+
-			"--no-record", res.Status)
+			"--no-record", res.Accounting)
 	}
 	if !objectID.MatchString(pl.SHA) {
 		return "", fmt.Errorf("sha %q is not an object id — refusing to use it as a filename", pl.SHA)
@@ -174,10 +174,10 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 
 	rec := Record{
 		SHA: pl.SHA, Date: date,
-		CoverageRepo: res.Coverage.Repo, CoveragePlan: res.Coverage.Plan,
-		Denominator: pl.ProductionTotal, Waived: res.Coverage.Waived,
+		AttestedRepo: res.Attested.Repo, AttestedPlan: res.Attested.Plan,
+		Denominator: pl.ProductionTotal, Waived: res.Attested.Waived,
 		WorklistSize: len(pl.HWorklist), UnmatchedSize: len(pl.HUnmatched),
-		Status: res.Status,
+		Accounting: res.Accounting,
 
 		Tier: dis.Tier, FamiliesNotRun: dis.FamiliesNotRun,
 		CheckedClean: clean, NearMisses: dis.NearMisses,
