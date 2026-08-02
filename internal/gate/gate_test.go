@@ -715,15 +715,17 @@ func writeJSONRaw(t *testing.T, b []byte) string {
 // The vocabulary lives in the deployed skill, not in this binary, so it can be iterated from usage
 // feedback without a binary release. These tests pin that: the file is the source, and the binary
 // carries no fallback table that could silently disagree with it.
-func TestTheVocabularyComesFromTheSkillNotTheBinary(t *testing.T) {
+func TestTheVocabularyComesFromTheLexiconNotTheBinary(t *testing.T) {
 	dir := t.TempDir()
-	sig := filepath.Join(dir, "h-signals")
-	if err := os.WriteFile(sig, []byte("# a comment\n\ndomain/widget: (widget|sprocket)\n"), 0o644); err != nil {
+	sig := filepath.Join(dir, "lexicon.md")
+	if err := os.WriteFile(sig, []byte("# lexicon\n\nprose about classes\n\n"+
+		"```h-signals\n# a comment\n\ndomain/widget: (widget|sprocket)\n```\n"+
+		"more prose, ignored\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	old := SignalsPath
-	SignalsPath = func() string { return sig }
-	defer func() { SignalsPath = old }()
+	old := LexiconPath
+	LexiconPath = func() string { return sig }
+	defer func() { LexiconPath = old }()
 
 	repo := gitRepo(t, map[string]string{
 		"internal/widget/shape.go": "package w\n",
@@ -741,9 +743,9 @@ func TestTheVocabularyComesFromTheSkillNotTheBinary(t *testing.T) {
 // A missing vocabulary is not an error here — it produces an empty worklist, and the empty-worklist
 // stop in enumerate says what to do about it far better than a parse error would.
 func TestAMissingVocabularyYieldsAnEmptyWorklistNotAFailure(t *testing.T) {
-	old := SignalsPath
-	SignalsPath = func() string { return filepath.Join(t.TempDir(), "absent") }
-	defer func() { SignalsPath = old }()
+	old := LexiconPath
+	LexiconPath = func() string { return filepath.Join(t.TempDir(), "absent") }
+	defer func() { LexiconPath = old }()
 
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package p\n"})
 	p := planFor(t, repo)
@@ -763,8 +765,8 @@ func TestAMissingVocabularyYieldsAnEmptyWorklistNotAFailure(t *testing.T) {
 
 // The shipped vocabulary must parse and every entry must compile — a typo in a regex would silently
 // drop a whole signal class.
-func TestTheShippedVocabularyParsesAndCompiles(t *testing.T) {
-	got := parseSignalFile(filepath.Join(repoRoot(t), "skill", "references", "h-signals"))
+func TestTheShippedLexiconSignalsParseAndCompile(t *testing.T) {
+	got := parseLexiconSignals(filepath.Join(repoRoot(t), "skill", "references", "ai-slop-lexicon.md"))
 	if len(got) < 5 {
 		t.Fatalf("shipped vocabulary looks empty: %d entries", len(got))
 	}
@@ -833,7 +835,7 @@ func TestBelowTheDeferFloorNothingIsDeferred(t *testing.T) {
 	}
 }
 
-// Tests must not depend on what happens to be installed on the machine running them. SignalsPath
+// Tests must not depend on what happens to be installed on the machine running them. LexiconPath
 // defaults to the DEPLOYED skill, which is correct at runtime and non-hermetic in a test: a
 // developer with no skill installed, or an older one, would get different results from CI.
 //
@@ -841,10 +843,27 @@ func TestBelowTheDeferFloorNothingIsDeferred(t *testing.T) {
 // tier-split assertion below a statement about the shipped vocabulary rather than about a machine.
 func TestMain(m *testing.M) {
 	if root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
-		shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "h-signals")
+		shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "ai-slop-lexicon.md")
 		if _, err := os.Stat(shipped); err == nil {
-			SignalsPath = func() string { return shipped }
+			LexiconPath = func() string { return shipped }
 		}
 	}
 	os.Exit(m.Run())
+}
+
+// Prose outside the fence must never be read as a signal — the lexicon is mostly prose, and a
+// stray `word: definition` line in it would otherwise become a live matching rule.
+func TestOnlyTheFencedBlockIsRead(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "lex.md")
+	if err := os.WriteFile(f, []byte(
+		"| **Dead on arrival** | Built, tested, documented; zero production call sites | ... |\n"+
+			"note: this line is prose and must be ignored\n"+
+			"```h-signals\nmoney/value: (wallet)\n```\n"+
+			"trailing: also prose, also ignored\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := parseLexiconSignals(f)
+	if len(got) != 1 || got[0][0] != "money/value" {
+		t.Fatalf("only the fenced block is a signal source: %+v", got)
+	}
 }

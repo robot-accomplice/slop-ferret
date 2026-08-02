@@ -187,8 +187,9 @@ happen to have used one of its words and not otherwise.
 What makes that safe is not the vocabulary's quality. It is that **a file no signal reaches is
 reported as unread, never as clean** — the ranking can be wrong without the report becoming wrong.
 
-**It lives in the skill, not the binary** (`skill/references/h-signals`), so it can be iterated from
-usage without a binary release: add a word after a sweep that missed something, reinstall the skill,
+**It is part of the lexicon** (`skill/references/ai-slop-lexicon.md`), not the binary — the tables
+there define what a class *is*, the signals define where it tends to *live*, and one `version:`
+now covers both. So it iterates from usage without a binary release: add a word after a sweep that missed something, reinstall the skill,
 done. Extend per-repo with a `.slop-h-signals` file in the target, same `reason: regex` format. It
 is expected to improve by accumulation, and the tier split it feeds is pinned by a committed fixture
 so a change to it is a deliberate re-measurement rather than a silent drift.

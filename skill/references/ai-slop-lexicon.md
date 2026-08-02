@@ -1,6 +1,6 @@
 ---
 type: topic
-version: 2026-08-01.1
+version: 2026-08-02.1
 tags: [ai-slop, code-review, taxonomy, ubiquitous-language, code-quality]
 ---
 # AI-slop lexicon — the ubiquitous language
@@ -128,6 +128,44 @@ applied*, where two of the first batch were wrong on first use.
 | **Wrapper-only termination** | Stopping a supervising process leaves the real work running, reparented and unowned | vs *Silent failure*: nothing errors — the caller is told it succeeded | after any kill, enumerate surviving PIDs rather than trusting the exit; never match processes by name pattern, which also hits the watcher | F |
 
 ---
+
+## H signals — where these classes tend to live
+
+**Part of this registry, not a separate artifact.** The tables above define *what* a class is; this
+defines *where* to look for it first. Both are the method's domain language, both are guesses that
+improve by use, and both are versioned by the `version:` field at the top of this file — which the
+signals previously were not, because they lived in a file of their own with no version at all.
+
+**This is a reading-order hint, not a completeness signal.** Measured across five real repositories
+on 2026-08-02: **59% label precision**, 20% of production files matched, and **0-of-6 recall on the
+files that actually produced findings** — including the one the method exists because of. It guesses
+semantics from names the *target's* authors chose, so it works when they happen to have used one of
+these words and not otherwise.
+
+What makes the miss safe is not the quality of this list. It is that **a file no signal reaches is
+reported as unread, never as clean.** The ranking can be wrong without the report becoming wrong.
+
+**Iterate it from usage.** After a sweep that missed something, add the word here and reinstall the
+skill; no binary release is involved. Extend per-repo with a `.slop-h-signals` file in the target,
+same format. Adding to a tier-1 group moves files into the required tier — measured: adding
+`ratelimit` to `money/value` matched ghola's `internal/client/ratelimit.go` and took it from 10
+required to 1, deferring 9 files on a repo readable in one pass, with every test still green. The
+split is pinned by a committed fixture, so a change here is a deliberate re-measurement.
+
+**Format:** one `reason: regex` per line, inside the fence. A signal matches at a path start, a
+segment start, or after a word separator inside a filename.
+
+```h-signals
+money/value: pay|payment|ledger|billing|invoice|wallet|treasury|balance|settle|revenue|refund|x402|transfer|mint|burn|stake|slash|reward|supply|escrow|vault|fee|gas|price|swap|exchange|liquidity|collateral|financial|fund|cost|charge|spend|budget|quota|credit|debit|ratelimit|throttle
+consensus/ordering: consensus|validator|block|blockchain|mempool|finality|fork|quorum|bft|raft|paxos|leader|proposer|commit_reveal|ordering|nonce|frontrun|mev|reorg|slot|epoch
+auth/session: auth|session|login|token|oauth|jwt|permission|acl|rbac|capability|tenant|policy|authority|approval|denial|consent|grant|privilege|role
+crypto/signing: crypto|sign|signature|keypair|secp|ecdsa|ed25519|hmac|cipher|encrypt|decrypt|seed|mnemonic|merkle|hash|zk|proof|commitment|nullifier
+arithmetic/overflow: checked_arith|safe_math|overflow|saturating|decimal|precision|rounding
+migration: migrat|schema_version|alembic|flyway|goose
+persistence/state: repo|repository|store|dao|dal|persist|database|state|account|utxo|trie|db|sql|journal|wal
+untrusted-parse: parse|parser|deserial|unmarshal|decode|webhook|ingest|codec|rpc|api
+network/untrusted-io: client|http|fetch|request|response|header|cookie|redirect|tls|ssl|cert|proxy|socket|dial|stream|download|upload|url|uri|host|dns|transport
+```
 
 ## Before reporting anything in C or H: check whether the schema already enforces it
 
