@@ -83,7 +83,10 @@ jobs:
             bin="ferret"; [ "$os" = "windows" ] && bin="ferret.exe"
             echo "==> ${os}/${arch}"
             GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/${bin}" ./cmd/ferret
-            base="ferret_${TAG}_${os}_${arch}"
+            # Assets are named after the PROJECT, not the binary inside them. The repo is slop-ferret and
+            # the binary is ferret; downstream release-sync keys on the project name, which is the
+            # house convention across the sibling projects (magma_<tag>_<os>_<arch>).
+            base="slop-ferret_${TAG}_${os}_${arch}"
             if [ "$os" = "windows" ]; then
               (cd dist && zip -q "${base}.zip" "$bin" && rm "$bin")
             else

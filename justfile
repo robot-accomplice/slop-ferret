@@ -81,7 +81,7 @@ release-dry version="v0.0.0-dev":
         bin="ferret"; [ "$os" = "windows" ] && bin="ferret.exe"
         echo "==> ${os}/${arch}"
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/${bin}" ./cmd/ferret
-        base="ferret_{{ version }}_${os}_${arch}"
+        base="slop-ferret_{{ version }}_${os}_${arch}"
         if [ "$os" = "windows" ]; then (cd dist && zip -q "${base}.zip" "$bin" && rm "$bin")
         else (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin"); fi
     done
