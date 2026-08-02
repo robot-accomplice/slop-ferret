@@ -41,15 +41,10 @@ const (
 	manifestName = ".slop-install.json"
 )
 
-// Both entries, always, together. Installing one and not the other IS the original defect.
-//
-// KNOWN OPEN (ABORT II, A1): they are one table, but there ARE code paths that write a subset.
-// The pre-flight below catches only a non-symlink AT the link path; any other relink failure
-// still lands after the tree is on disk. Reproduced 20/20 with `~/.claude/commands/slop-ferret`
-// present as a regular file (ENOTDIR defeats the pre-flight's Lstat) and with `commands/`
-// read-only: 14/20 left `/slop-ferret` linked and `/slop-ferret:report` missing, 6/20 left
-// neither, and every run deployed the full tree with no manifest. Until this is stage-and-swap,
-// do not read the pre-flight as covering the class — it covers one instance of it.
+// Both entries, always, together. Installing one and not the other IS the original defect, and
+// `linkAll` enforces it: every entry is created before any content is written, in sorted order,
+// and the failure of any one undoes the rest. See the comment at its call site for the two shapes
+// that defeated the previous instance-shaped guard.
 var commands = map[string]string{
 	"slop-ferret.md":        "SKILL.md",
 	"slop-ferret/report.md": "commands/slop-ferret-report.md",
@@ -243,16 +238,24 @@ func Install(w io.Writer, src Source, force bool) int {
 	// edits were at risk, about files ferret had written itself 200ms earlier. The refusal was
 	// correct and its timing made the tool lie.
 	//
-	// Checking link targets here means the common abort happens before anything is on disk.
-	if !force {
-		for link := range linkTargets(p) {
-			if fi, err := os.Lstat(link); err == nil && fi.Mode()&os.ModeSymlink == 0 {
-				fmt.Fprintf(w, "ferret install: REFUSING — %s exists and is not a symlink this "+
-					"installer created. Nothing has been written. Move it aside, or re-run with "+
-					"--force to overwrite it.\n", link)
-				return 3
-			}
-		}
+	// THE LINKS GO FIRST, ALL OF THEM, AND THEY ROLL BACK.
+	//
+	// An earlier fix pre-flighted only `os.Lstat(link)` returning a non-symlink AT the link path.
+	// That is one INSTANCE of the failure, not the class: any other relink failure still landed
+	// after the tree was on disk. Reproduced 20/20 under review — with
+	// ~/.claude/commands/slop-ferret present as a regular FILE, Lstat returns ENOTDIR so the
+	// pre-flight passed, MkdirAll then failed mid-loop, and 14 runs left /slop-ferret linked with
+	// /slop-ferret:report missing while 6 left neither; every run deployed the full tree with no
+	// manifest, so the next install accused the user of editing files ferret had written itself.
+	//
+	// A symlink does not require its target to exist, so the whole link phase can be completed and
+	// verified before any content is written. If any link fails, the ones already made are undone
+	// and nothing else has been touched. That covers the class instead of the one shape a test
+	// happened to pin.
+	if code, err := linkAll(p, force); err != nil {
+		fmt.Fprintf(w, "ferret install: REFUSING — %v\n  Nothing has been written: the command "+
+			"links are created before the skill tree, and the ones already made were undone.\n", err)
+		return code
 	}
 
 	files, _ := srcFiles(src)
@@ -276,13 +279,6 @@ func Install(w io.Writer, src Source, force bool) int {
 		written[rel] = hashBytes(b)
 		if st[rel] != stSame {
 			changed++
-		}
-	}
-
-	for link, target := range linkTargets(p) {
-		if err := relink(link, target, force); err != nil {
-			fmt.Fprintf(w, "ferret: linking %s: %v\n", link, err)
-			return 2
 		}
 	}
 
@@ -388,4 +384,36 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 		fmt.Fprintf(w, "  ! %s\n", s)
 	}
 	return 1
+}
+
+// linkAll creates every command entry, or none. Both entries are one table (installing one and not
+// the other IS the original defect), so the failure of any one undoes the rest.
+//
+// Order is SORTED, not map order. The original defect returned on the first error while ranging a
+// map, so which entry survived a half-install depended on Go's randomised iteration — a failure
+// that reproduces differently every run is one nobody can diagnose from a report.
+func linkAll(p paths, force bool) (int, error) {
+	targets := linkTargets(p)
+	links := make([]string, 0, len(targets))
+	for link := range targets {
+		links = append(links, link)
+	}
+	sort.Strings(links)
+
+	var made []string
+	undo := func() {
+		for _, l := range made {
+			// Best-effort: this runs on a path that is already failing, and a failure to undo must
+			// not mask the failure being reported.
+			_ = os.Remove(l)
+		}
+	}
+	for _, link := range links {
+		if err := relink(link, targets[link], force); err != nil {
+			undo()
+			return 3, err
+		}
+		made = append(made, link)
+	}
+	return 0, nil
 }
