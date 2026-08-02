@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/ferret-mascot-dark.png">
+    <img src="docs/assets/ferret-mascot.png" alt="Slop Ferret" width="220">
+  </picture>
+</p>
+
 # slop-ferret
 
 [![CI](https://github.com/robot-accomplice/slop-ferret/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-accomplice/slop-ferret/actions/workflows/ci.yml)
