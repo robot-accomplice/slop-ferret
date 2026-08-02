@@ -7,9 +7,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
+
+// A sha reaches a FILENAME, so it must look like an object id. The review turned the traversal
+// below into overwriting ~/.claude/settings.json by creating a branch named `settings`: the only
+// guard was `git cat-file -e <sha>^{commit}`, which a branch satisfies.
+var objectID = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
+
+// A key becomes a directory under the records root. Anything that is not a plain safe segment is
+// replaced, because the key comes from the AUDITED repository's origin URL and this tool exists to
+// be pointed at repositories you have reason to distrust.
+var unsafeKeySegment = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 // A Record is one sweep of one repository at one commit.
 //
@@ -57,7 +68,9 @@ func recordsRoot() (string, error) {
 	return filepath.Join(home, ".slop-ferret", "records"), nil
 }
 
-// RepoKey identifies a repository stably across checkouts. The origin URL is preferred because a
+// RepoKey identifies a repository stably across checkouts. The result is SAFE BY CONSTRUCTION —
+// it is reduced to plain path segments here rather than at the call site, because it is exported
+// and derived from the AUDITED repository's origin URL. The origin URL is preferred because a
 // path changes when the tree moves and the records would then look like a different repo's; the
 // hash fallback keeps remoteless repos usable rather than unrecordable.
 func RepoKey(repo string) (string, error) {
@@ -69,7 +82,7 @@ func RepoKey(repo string) (string, error) {
 		}
 		u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
 		if u != "" {
-			return u, nil
+			return safeKey(u), nil
 		}
 	}
 	abs, err := filepath.Abs(repo)
@@ -77,7 +90,30 @@ func RepoKey(repo string) (string, error) {
 		return "", err
 	}
 	s := sha256.Sum256([]byte(abs))
-	return "path-" + hex.EncodeToString(s[:])[:8], nil
+	return safeKey("path-" + hex.EncodeToString(s[:])[:8]), nil
+}
+
+// safeKey reduces a key to path segments that cannot escape. `..` and empty segments are dropped
+// outright rather than sanitised into something adjacent, and every remaining character outside
+// [A-Za-z0-9._-] becomes `_`.
+//
+// filepath.Join CLEANS AFTER JOINING, so `filepath.Join(root, "../../x")` resolves outside root
+// without complaint. That is the whole mechanism of ABORT finding S1, and it is why the caller
+// re-checks containment as well: this function is the belt, that check is the braces.
+func safeKey(key string) string {
+	var out []string
+	normalised := strings.ReplaceAll(filepath.ToSlash(key), "\\", "/")
+	for _, seg := range strings.Split(normalised, "/") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		out = append(out, unsafeKeySegment.ReplaceAllString(seg, "_"))
+	}
+	if len(out) == 0 {
+		return "unknown"
+	}
+	return strings.Join(out, "/")
 }
 
 // WriteRecord persists one sweep and returns the path written.
@@ -87,6 +123,19 @@ func RepoKey(repo string) (string, error) {
 // ground — and two prior sweeps recorded exactly that, both taken from dirty maps whose composite
 // shas evaporated when the commits were amended away.
 func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, error) {
+	// A record is durable input to a FUTURE sweep: SKILL.md tells the next run to read
+	// `checked_clean` and not re-spend budget on those classes. A sweep that did not settle has not
+	// established anything, so persisting its claims is the persistence layer converting an
+	// unperformed audit into a completed-looking one — the exact invariant this tool defends.
+	// (ABORT I1, the review's designated "one fix".)
+	if res.Status != "settled" {
+		return "", fmt.Errorf("this sweep did not settle (status %q) — refusing to record claims "+
+			"a later sweep would skip ground on. Close the remaining items first, or re-run with "+
+			"--no-record", res.Status)
+	}
+	if !objectID.MatchString(pl.SHA) {
+		return "", fmt.Errorf("sha %q is not an object id — refusing to use it as a filename", pl.SHA)
+	}
 	if _, err := gitLines(repo, "cat-file", "-e", pl.SHA+"^{commit}"); err != nil {
 		return "", fmt.Errorf("sha %q does not resolve in %s — refusing to record a boundary "+
 			"nobody can re-derive", pl.SHA, repo)
@@ -99,7 +148,12 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(root, filepath.FromSlash(key))
+	dir := filepath.Join(root, filepath.FromSlash(safeKey(key)))
+	// Belt and braces: re-derive the relationship after Join has cleaned the path, because Join
+	// cleans AFTER joining and that is exactly how the escape worked.
+	if rel, err := filepath.Rel(root, dir); err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("refusing to write outside the records root: key %q resolves to %s", key, dir)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -107,6 +161,15 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 	date := ""
 	if lines, err := gitLines(repo, "show", "-s", "--format=%cs", pl.SHA); err == nil && len(lines) > 0 {
 		date = lines[0]
+	}
+
+	// A class recorded clean WITHOUT a method is not checkable, and an unchecked clean is how a
+	// later sweep skips ground nobody covered. Drop them rather than persist an unfalsifiable claim.
+	clean := make([]CheckedClean, 0, len(dis.CheckedClean))
+	for _, c := range dis.CheckedClean {
+		if strings.TrimSpace(c.Class) != "" && strings.TrimSpace(c.Method) != "" {
+			clean = append(clean, c)
+		}
 	}
 
 	rec := Record{
@@ -117,7 +180,7 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 		Status: res.Status,
 
 		Tier: dis.Tier, FamiliesNotRun: dis.FamiliesNotRun,
-		CheckedClean: dis.CheckedClean, NearMisses: dis.NearMisses,
+		CheckedClean: clean, NearMisses: dis.NearMisses,
 		FindingsVerified: dis.FindingsVerified, FindingsSuspected: dis.FindingsSuspected,
 		ReportPath: dis.ReportPath,
 	}
