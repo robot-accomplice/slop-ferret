@@ -216,6 +216,7 @@ type Plan struct {
 	Fidelity               string            `json:"fidelity"`
 	ReachabilityComputable bool              `json:"reachability_computable"`
 	MapProvenance          map[string]string `json:"map_provenance"`
+	NotComputableReason    string            `json:"not_computable_reason,omitempty"`
 	UnseededFamilies       []string          `json:"unseeded_families"`
 	UnseededDetail         map[string]string `json:"unseeded_detail"`
 	Candidates             []Candidate       `json:"candidates"`
@@ -238,6 +239,7 @@ type rowDoc struct {
 	Fidelity               string `json:"fidelity"`
 	Tree                   string `json:"tree"`
 	ReachabilityComputable bool   `json:"reachability_computable"`
+	NotComputableReason    string `json:"not_computable_reason"`
 	Rows                   []struct {
 		Symbol string `json:"symbol"`
 		File   string `json:"file"`
@@ -539,6 +541,27 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 		unseededFamilies = append(unseededFamilies, fam)
 		unseededDetail[f] = fmt.Sprintf("family %s has no map seed (magma does not emit %s)", fam, f)
 	}
+
+	// A REFUSED MAP IS NOT AN EMPTY ONE. magma distinguishes rows:null (the analysis could not run)
+	// from rows:[] (it ran and found nothing), and its contract calls that distinction
+	// load-bearing: "a refusal must never be mistaken for 'found nothing'".
+	//
+	// This gate used to discard it. Measured 2026-08-02 against a real refused map — magma 0.1.0
+	// has no Rust parser — the plan came back with 0 candidates, no reason, and family A absent
+	// from unseeded_families. A sweep could then report family A checked-clean over an analysis
+	// that never ran, which is the single thing `unseeded_families` exists to prevent.
+	//
+	// So a refusal marks family A unseeded on exactly the same footing as a missing file, and the
+	// reason travels with it: dropping the reason loses the WHY, and a reader cannot tell "no Rust
+	// parser" from "the map is broken".
+	if !dead.ReachabilityComputable {
+		reason := dead.NotComputableReason
+		if reason == "" {
+			reason = "the map reports the analysis was not computable and gave no reason"
+		}
+		unseededFamilies = append(unseededFamilies, "A")
+		unseededDetail["_dead.json"] = "family A was NOT COMPUTED, not found-empty: " + reason
+	}
 	sort.Strings(unseededFamilies)
 
 	signals := loadSignals(repo)
@@ -585,7 +608,8 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 		ReachabilityComputable: dead.ReachabilityComputable,
 		MapProvenance: map[string]string{"generator": dead.Generator,
 			"contract_version": dead.ContractVersion},
-		UnseededFamilies: unseededFamilies, UnseededDetail: unseededDetail,
+		NotComputableReason: dead.NotComputableReason,
+		UnseededFamilies:    unseededFamilies, UnseededDetail: unseededDetail,
 		Candidates: cands, ProductionTotal: len(production), ProductionFiles: production,
 		ProductionUnclassified: nonNil(unclassified), HWorklist: nonNilW(work),
 		HRequired: nonNilW(required), HDeferred: nonNilW(deferred), HUnmatched: unmatchedAll,
@@ -605,4 +629,15 @@ func nonNilW(s []WorkItem) []WorkItem {
 		return []WorkItem{}
 	}
 	return s
+}
+
+// UnseededDetailValues is the detail strings alone, for callers that want to scan the reasons
+// without caring which file each came from.
+func (p *Plan) UnseededDetailValues() []string {
+	out := make([]string, 0, len(p.UnseededDetail))
+	for _, v := range p.UnseededDetail {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
 }
