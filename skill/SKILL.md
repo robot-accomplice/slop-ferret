@@ -183,11 +183,15 @@ its maintainer 2026-08-01:
   magma's version, so an unchanged repo reports "already fresh" and writes nothing — silently
   producing a stale map from a magma you just fixed. `generator` in the envelope names the build
   that wrote a map; check it rather than the run's exit code.
-- **Never gate on a dirty tree.** magma stamps a dirty map's `sha` as `<sha>+<diffhash>`, which can
-  never equal a pinned commit, so the gate refuses by construction. That is the point: a dirty map
-  reports in-flight, not-yet-wired code as dead, and its sha is *disproportionately* likely to
-  evaporate because in-flight commits get amended or rebased away. Two earlier roboticus sweeps
-  pinned dirty-map shas and neither resolves today.
+- **Never gate on a dirty tree.** magma stamps the marker in **`tree`** (`<sha>-dirty`) and leaves
+  `sha` as the clean head sha. `ferret plan` refuses when `tree` disagrees with `sha`. Until
+  2026-08-02 this file claimed the marker was in `sha` as `<sha>+<diffhash>` and that the gate
+  therefore "refuses by construction" — the gate compared `sha`, the comparison passed, and a dirty
+  map was accepted with exit 0. The guarantee was prose for its whole life, and it was found by
+  sweeping magma rather than by any test here. A dirty map reports in-flight, not-yet-wired code as
+  dead, and its boundary is *disproportionately* likely to evaporate because in-flight commits get
+  amended or rebased away: two earlier roboticus sweeps pinned dirty-map boundaries and neither
+  resolves today.
 - **Three contract strings, not interchangeable.** `codemap-rows/1` (row files — the only one this
   gate may accept), `codemap-graph/1` (`graph.json`), `magma-code-graph/1` (the architext emit).
 

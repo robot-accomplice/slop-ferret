@@ -15,12 +15,20 @@ import (
 
 func writeMap(t *testing.T, sha, contract, fidelity string, computable bool, deadRows []map[string]any) string {
 	t.Helper()
+	return writeMapTree(t, sha, sha, contract, fidelity, computable, deadRows)
+}
+
+func writeMapTree(t *testing.T, sha, tree, contract, fidelity string, computable bool, deadRows []map[string]any) string {
+	t.Helper()
 	d := filepath.Join(t.TempDir(), "m", ".magma")
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	head := map[string]any{"contract_version": contract, "generator": "magma/0.1.0", "sha": sha,
 		"fidelity": fidelity, "reachability_computable": computable}
+	if tree != "" {
+		head["tree"] = tree
+	}
 	write := func(name string, extra map[string]any) {
 		doc := map[string]any{}
 		for k, v := range head {
@@ -582,4 +590,44 @@ func headSHA(t *testing.T, repo string) string {
 		t.Fatal(err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// THE REFUSAL THAT NEVER FIRED. SKILL.md and this package both claimed a dirty map "refuses by
+// construction" because magma stamps a composite sha that can never equal a pinned commit.
+// Reproduced against real magma 2026-08-02: it stamps `sha` with the CLEAN head sha and puts the
+// marker in `tree` ("4f33b3c-dirty"). This gate compared `sha`, so it accepted a dirty map and
+// exited 0 — the guarantee was prose only.
+//
+// A dirty map reports in-flight, not-yet-wired code as dead, and its boundary is disproportionately
+// likely to evaporate when the commit is amended or rebased away. Two prior sweeps pinned exactly
+// such a boundary and neither resolves today.
+func TestADirtyMapIsRefusedViaTheTreeField(t *testing.T) {
+	for _, tree := range []string{"abc123-dirty", "abc123+deadbeef"} {
+		m := writeMapTree(t, "abc123", tree, "codemap-rows/1", "rta", true, nil)
+		_, err := BuildPlan(m, "abc123", gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+		if err == nil {
+			t.Fatalf("tree=%q: a dirty map must be refused", tree)
+		}
+		if code(err) != ExitRefused {
+			t.Errorf("tree=%q: exit %d, want ExitRefused", tree, code(err))
+		}
+		if !strings.Contains(err.Error(), "DIRTY") {
+			t.Errorf("tree=%q: the refusal must name the cause: %v", tree, err)
+		}
+	}
+}
+
+func TestACleanMapWhoseTreeEqualsItsShaIsAccepted(t *testing.T) {
+	m := writeMapTree(t, "abc123", "abc123", "codemap-rows/1", "rta", true, nil)
+	if _, err := BuildPlan(m, "abc123", gitRepo(t, map[string]string{"a.go": "package a\n"}), ""); err != nil {
+		t.Fatalf("a clean map must be accepted: %v", err)
+	}
+}
+
+// An older map with no `tree` field at all must still work: absence is not evidence of dirtiness.
+func TestAMapWithNoTreeFieldIsAccepted(t *testing.T) {
+	m := writeMapTree(t, "abc123", "", "codemap-rows/1", "rta", true, nil)
+	if _, err := BuildPlan(m, "abc123", gitRepo(t, map[string]string{"a.go": "package a\n"}), ""); err != nil {
+		t.Fatalf("a map without a tree field must be accepted: %v", err)
+	}
 }
