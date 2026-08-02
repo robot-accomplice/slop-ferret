@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+func render(t *testing.T, in Input) string {
+	t.Helper()
+	var b bytes.Buffer
+	if err := Render(&b, in); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func sample() Input {
 	return Input{
 		Repo: "ghola", SHA: "4f33b3c", SkillVersion: "2026-08-02.2", LexiconVer: "2026-08-01.1",
@@ -31,7 +40,7 @@ func TestFindingsAreOrderedSeverityFirstThenVerifiedFirst(t *testing.T) {
 	if err := Render(&b, sample()); err != nil {
 		t.Fatal(err)
 	}
-	out := b.String()
+	out := out
 	order := []string{"verified blocker", "suspected blocker", "fixable", "note thing"}
 	prev := -1
 	for _, want := range order {
@@ -56,7 +65,7 @@ func TestRenderIsDeterministic(t *testing.T) {
 	if err := Render(&b, sample()); err != nil {
 		t.Fatal(err)
 	}
-	if a.String() != b.String() {
+	if a.String() != out {
 		t.Fatal("two renders of the same input differ")
 	}
 }
@@ -64,10 +73,9 @@ func TestRenderIsDeterministic(t *testing.T) {
 // Self-contained by construction: no external stylesheet, script, font or image. A report that
 // phones out is not a local file.
 func TestPageMakesNoExternalRequests(t *testing.T) {
-	var b bytes.Buffer
-	Render(&b, sample())
+	out := render(t, sample())
 	for _, bad := range []string{"<script", "<link", "@import", "src=", "http://", "https://"} {
-		if strings.Contains(b.String(), bad) {
+		if strings.Contains(out, bad) {
 			t.Errorf("page contains %q — it must be self-contained", bad)
 		}
 	}
@@ -77,19 +85,18 @@ func TestPageMakesNoExternalRequests(t *testing.T) {
 // way: one finding moves a small rate by 13-50 points, and a number is harder to retract than a blank.
 func TestRateIsSuppressedBelowTheFloorAndTheDenominatorIsAlwaysShown(t *testing.T) {
 	in := sample()
-	var b bytes.Buffer
-	Render(&b, in)
-	if !strings.Contains(b.String(), "n/a (denominator 25 &lt; 100)") &&
-		!strings.Contains(b.String(), "n/a (denominator 25 < 100)") {
+	out := render(t, in)
+	if !strings.Contains(out, "n/a (denominator 25 &lt; 100)") &&
+		!strings.Contains(out, "n/a (denominator 25 < 100)") {
 		t.Errorf("small denominator must suppress the rate and say why")
 	}
-	if !strings.Contains(b.String(), "denominator 25") {
+	if !strings.Contains(out, "denominator 25") {
 		t.Error("the denominator must be published regardless")
 	}
 	in.Denominator = 200
 	b.Reset()
 	Render(&b, in)
-	if !strings.Contains(b.String(), "per 1,000") {
+	if !strings.Contains(out, "per 1,000") {
 		t.Error("above the floor the rate should render")
 	}
 }
@@ -99,18 +106,16 @@ func TestRateIsSuppressedBelowTheFloorAndTheDenominatorIsAlwaysShown(t *testing.
 func TestZeroVerifiedWithSuspectedSaysSoOnItsFace(t *testing.T) {
 	in := sample()
 	in.Findings = []Finding{{Title: "lead", Severity: "blocking", Status: "SUSPECTED", File: "x.rs"}}
-	var b bytes.Buffer
-	Render(&b, in)
-	if !strings.Contains(b.String(), "none verified") {
+	out := render(t, in)
+	if !strings.Contains(out, "none verified") {
 		t.Error("must name the tell: leads with nothing verified is not a clean result")
 	}
 }
 
 // The self-report caveat is the frame, not a footnote.
 func TestThePageStatesThatItDoesNotObserveReading(t *testing.T) {
-	var b bytes.Buffer
-	Render(&b, sample())
-	if !strings.Contains(b.String(), "does not observe reading") {
+	out := render(t, sample())
+	if !strings.Contains(out, "does not observe reading") {
 		t.Error("the page must state that the read figures are the auditor's statement")
 	}
 }
@@ -121,29 +126,25 @@ func TestFindingProseIsEscaped(t *testing.T) {
 	in := sample()
 	in.Findings = []Finding{{Title: `<img src=x onerror=alert(1)>`, Severity: "note",
 		Status: "VERIFIED", File: "a.go"}}
-	var b bytes.Buffer
-	Render(&b, in)
-	if strings.Contains(b.String(), "<img src=x") {
+	out := render(t, in)
+	if strings.Contains(out, "<img src=x") {
 		t.Error("finding prose must be escaped, not injected")
 	}
 }
 
 // Coverage before results: a reader must know the shape of the sweep before reading its output.
 func TestCoverageSectionPrecedesFindings(t *testing.T) {
-	var b bytes.Buffer
-	Render(&b, sample())
-	out := b.String()
+	out := render(t, sample())
 	if strings.Index(out, "what was and was not covered") > strings.Index(out, "Findings — severity first") {
 		t.Error("coverage must come before results")
 	}
 }
 
 func TestTemplateHasNoUnrenderedActions(t *testing.T) {
-	var b bytes.Buffer
-	Render(&b, sample())
+	out := render(t, sample())
 	// `}}` alone is not a marker — CSS closes nested @media blocks with it. A template ACTION
 	// always opens with `{{`, and the stylesheet never contains that sequence.
-	if regexp.MustCompile(`\{\{`).MatchString(b.String()) {
+	if regexp.MustCompile(`\{\{`).MatchString(out) {
 		t.Error("unrendered template actions in the output")
 	}
 }
