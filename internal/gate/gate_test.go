@@ -701,3 +701,12 @@ func writeRefusedMap(t *testing.T, sha, reason string) string {
 	}
 	return filepath.Dir(d)
 }
+
+func writeJSONRaw(t *testing.T, b []byte) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "f.json")
+	if err := os.WriteFile(p, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}

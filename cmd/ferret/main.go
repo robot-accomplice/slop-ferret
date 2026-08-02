@@ -32,8 +32,9 @@ const binVersion = "0.1.0"
 
 const usage = `ferret — ferrets AI slop out of a repository
 
-  ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-  ferret verify <plan.json> <discharge.json> [<repo>]   0 settled · 3 items open · 4 refused
+  ferret plan <map-dir> <sha> <repo> [--since <ref>]    > plan.json
+  ferret discharge <plan.json>                          > discharge skeleton, all undispositioned
+  ferret enumerate <plan.json> <discharge.json> [<repo>]  0 accounted · 3 items open · 4 refused
   ferret records <repo>                                 prior sweeps, newest first
   ferret install [--ref <ref>] [--from <dir>]           acquire the skill and deploy it
   ferret update                                         synonym of install
@@ -62,10 +63,29 @@ func run(argv []string, stdout, stderr io.Writer) int {
 	switch argv[0] {
 	case "plan":
 		return cmdPlan(args, stdout, stderr)
-	case "verify":
+	case "enumerate":
 		return cmdVerify(args, stdout, stderr)
 	case "install", "update": // D4: synonyms — both acquire prose and deploy it
 		return cmdInstall(args, stdout, stderr)
+	case "discharge":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, usage)
+			return gate.ExitMisuse
+		}
+		b, err := os.ReadFile(args[0])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		var pl gate.Plan
+		if err := json.Unmarshal(b, &pl); err != nil {
+			return fail(err, stderr)
+		}
+		sk, err := gate.Skeleton(&pl)
+		if err != nil {
+			return fail(err, stderr)
+		}
+		fmt.Fprintln(stdout, string(sk))
+		return gate.ExitOK
 	case "records":
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, usage)

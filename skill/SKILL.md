@@ -169,8 +169,9 @@ SHA=$(git -C <repo> rev-parse --short HEAD)                      # CLEAN tree, a
 magma --depth 1 <repo> <name> ~/.slop-ferret/maps                # rows land in <name>/.magma/
 ferret plan ~/.slop-ferret/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
 # ... do the sweep: read every plan.h_required path; account for EVERY candidate ...
-ferret verify plan.json discharge.json <repo>   # two fractions + a work queue
-                                               # 0 settled · 3 items open · 4 refused
+ferret discharge plan.json > discharge.json    # skeleton: every item, undispositioned
+#   ... do the sweep, moving each path and candidate to its disposition ...
+ferret enumerate plan.json discharge.json <repo>  # 0 accounted · 3 items open · 4 refused
 ```
 
 **The generator is `magma` (`~/go/bin/magma`), and four of its properties bite.** Confirmed with
@@ -239,6 +240,14 @@ made rather than a gap nobody owns. Do not let the gate's exit code stand in for
 therefore domain-bound: add `reason: regex` lines to `.slop-h-signals` in the target repo and re-plan.
 An empty worklist is a hard stop, never a clean result — `ghola` enumerated zero H-paths as an HTTP
 client because the vocabulary had no network terms, and a short worklist reads as a clean repo.
+
+**Do not hand-write the discharge.** `ferret discharge plan.json` emits it, pre-bound to the plan's
+sha and pre-filled with the facts the plan already states. Assembling it is deterministic
+transcription: doing that by hand costs tokens, varies between runs, and is where every malformed
+discharge came from — a mistyped sha binding to no plan, a forgotten unseeded family, a candidate
+omitted rather than refuted. The skeleton starts deliberately WRONG — every path unread, every
+candidate undispositioned — so an unedited one enumerates as incomplete rather than passing quietly.
+Your job is the half only you can do: having actually looked, move each item to its disposition.
 
 **Pass `--since <ref>` and read the unmatched-change list first.** Extending the vocabulary fixes an
 instance and never the class: the next unenumerated subsystem is exactly as silent, and nothing checks
@@ -462,7 +471,7 @@ Findings:      <n> VERIFIED  (<b> blocking · <f> fix-or-file · <n> note)
 Rate:          <severity-weighted, VERIFIED only> per 1,000 non-test source  [denominator: M]
 Checked-clean: <class — method used>
 Near-misses:   <candidate — what refuted it>
-H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (ferret verify)
+H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (ferret enumerate)
 Blind spots:   <n> changed files no H signal reached (<w> waived)  [baseline: <ref> | n/a]
 Coverage:      repo <r>/<R> source files read (<p>%) · plan <d>/<D> dispositioned
                <w> waived (counted as unread) · <u> unclassified

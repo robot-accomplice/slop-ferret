@@ -59,7 +59,7 @@ func TestPlanRejectsWrongArity(t *testing.T) {
 }
 
 func TestVerifyRejectsWrongArity(t *testing.T) {
-	if code, _, _ := runCLI(t, "verify", "only-one"); code != 2 {
+	if code, _, _ := runCLI(t, "enumerate", "only-one"); code != 2 {
 		t.Fatal("verify needs two positional args")
 	}
 }
@@ -155,7 +155,7 @@ func TestBareInstallBeforeAnyReleaseNamesTheAlternatives(t *testing.T) {
 // verify without a repo argument records nothing and is not an error: an absent repo is a narrower
 // invocation, not a mistake.
 func TestVerifyWithoutARepoStillVerifies(t *testing.T) {
-	if code, _, _ := runCLI(t, "verify", "only-one"); code != gate.ExitMisuse {
+	if code, _, _ := runCLI(t, "enumerate", "only-one"); code != gate.ExitMisuse {
 		t.Fatal("verify still needs at least plan and discharge")
 	}
 }
@@ -237,7 +237,7 @@ func TestVerifyWithARepoWritesARecordAndKeepsStdoutParseable(t *testing.T) {
 	t.Setenv("HOME", home)
 	repo, pp, dp, sha := verifyFixture(t)
 
-	code, out, errs := runCLI(t, "verify", pp, dp, repo)
+	code, out, errs := runCLI(t, "enumerate", pp, dp, repo)
 	if code != gate.ExitOK {
 		t.Fatalf("code=%d err=%s", code, errs)
 	}
@@ -262,7 +262,7 @@ func TestVerifyWithoutARepoRecordsNothingAndSucceeds(t *testing.T) {
 	t.Setenv("HOME", home)
 	_, pp, dp, _ := verifyFixture(t)
 
-	code, _, errs := runCLI(t, "verify", pp, dp)
+	code, _, errs := runCLI(t, "enumerate", pp, dp)
 	if code != gate.ExitOK {
 		t.Fatalf("code=%d err=%s", code, errs)
 	}
@@ -279,7 +279,7 @@ func TestVerifyNoRecordSuppressesTheWrite(t *testing.T) {
 	t.Setenv("HOME", home)
 	repo, pp, dp, _ := verifyFixture(t)
 
-	code, _, errs := runCLI(t, "verify", pp, dp, repo, "--no-record")
+	code, _, errs := runCLI(t, "enumerate", pp, dp, repo, "--no-record")
 	if code != gate.ExitOK {
 		t.Fatalf("code=%d err=%s", code, errs)
 	}
@@ -299,7 +299,7 @@ func TestVerifyReportsItemsOpenAndStillPrintsTheResult(t *testing.T) {
 	if err := os.WriteFile(dp, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	code, out, _ := runCLI(t, "verify", pp, dp, repo)
+	code, out, _ := runCLI(t, "enumerate", pp, dp, repo)
 	if code != gate.ExitItemsOpen {
 		t.Fatalf("code=%d, want ExitItemsOpen", code)
 	}
@@ -315,7 +315,7 @@ func TestVerifyOnAMalformedPlanIsMisuse(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, _ := runCLI(t, "verify", bad, bad); code != gate.ExitMisuse {
+	if code, _, _ := runCLI(t, "enumerate", bad, bad); code != gate.ExitMisuse {
 		t.Fatalf("code=%d, want ExitMisuse", code)
 	}
 }
@@ -348,7 +348,7 @@ func TestARecordFailureKeepsTheVerifyResultAndTheRealExitCode(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	code, out, errs := runCLI(t, "verify", pp, dp, repo)
+	code, out, errs := runCLI(t, "enumerate", pp, dp, repo)
 	if code == gate.ExitMisuse {
 		t.Errorf("a record failure is not misuse: code=%d err=%s", code, errs)
 	}
