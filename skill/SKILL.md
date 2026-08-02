@@ -505,7 +505,14 @@ The block above is the text half. **The report is the other half, and it is Step
 
 ## Step 5 — build the report (`/slop-ferret:report`)
 
-**Run `/slop-ferret:report`. A sweep is not finished without it.** The text verdict block is for the
+**Run `ferret report <input.json> <out.html>`.** The layout is not yours to write: ordering,
+tables, denominators, rate suppression and escaping are deterministic transforms, and doing them by
+hand cost two defects in a single report on 2026-08-01 — a malformed tag and a junk CSS value,
+caught only by grepping the output afterwards. You supply the JSON: which findings exist, their
+severity and status, the claim, what refuted the near-misses, the prose. The binary renders it the
+same way every time.
+
+**A sweep is not finished without it.** The text verdict block is for the
 record; the report is what a maintainer actually reads, and it is the only artifact that shows coverage,
 calibration and near-misses together.
 
