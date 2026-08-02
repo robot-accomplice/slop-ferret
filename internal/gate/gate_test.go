@@ -740,26 +740,85 @@ func TestTheVocabularyComesFromTheLexiconNotTheBinary(t *testing.T) {
 	}
 }
 
-// A missing vocabulary is not an error here — it produces an empty worklist, and the empty-worklist
-// stop in enumerate says what to do about it far better than a parse error would.
-func TestAMissingVocabularyYieldsAnEmptyWorklistNotAFailure(t *testing.T) {
+// REVERSED 2026-08-02. This test used to be named ...YieldsAnEmptyWorklistNotAFailure and asserted
+// that `plan` exits 0 with no vocabulary, on the stated ground that "the empty-worklist stop in
+// enumerate says what to do about it far better than a parse error would."
+//
+// That reasoning was wrong on three facts, all reproduced:
+//
+//  1. The enumerate stop names the WRONG remedy — "extend the signals via `.slop-h-signals`" — which
+//     sends the operator to write regexes into the TARGET repo when the cause is that the skill was
+//     never installed. `ferret install` is not mentioned.
+//  2. It arrives two commands later. In between, plan.json says nothing about a lexicon at all; a
+//     grep of its 56 lines for "lexicon", "skill" or "signal" matches only file paths.
+//  3. A PARTIAL load defeats it entirely. One unbalanced paren in the lexicon drops a single signal
+//     class while leaving others, so the worklist is non-empty, the stop never fires, and the sweep
+//     records family H checked clean having quietly demoted `internal/auth/session.go` to the
+//     cheap-to-waive complement.
+//
+// This is the default state of a `go install`ed binary before `ferret install` has ever run, so the
+// silent path was the common path.
+func TestAnEmptyVocabularyIsRefusedAtPlanTime(t *testing.T) {
 	old := LexiconPath
 	LexiconPath = func() string { return filepath.Join(t.TempDir(), "absent") }
 	defer func() { LexiconPath = old }()
 
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package p\n"})
+	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "abc123", repo, "")
+	if err == nil {
+		t.Fatal("a sweep with no vocabulary enumerates nothing and reports the same as a clean " +
+			"repo; plan must refuse rather than hand back an empty worklist")
+	}
+	if c := code(err); c != ExitRefused {
+		t.Errorf("exit = %d, want %d (refused): nothing was measured, which is not the same as "+
+			"items being open", c, ExitRefused)
+	}
+	if !strings.Contains(err.Error(), "ferret install") {
+		t.Errorf("the refusal must name the actual remedy — the skill is not deployed — rather "+
+			"than sending the operator to write regexes into the target repo: %v", err)
+	}
+}
+
+// A signal that will not compile is refused, not skipped. Skipping silently demotes every path it
+// would have matched from the blast-radius tier into the cheap-to-waive complement, while the sweep
+// still reports family H covered: measured, one unbalanced paren moved internal/auth/session.go out
+// of h_required with exit 0 and no warning.
+func TestAnUncompilableSignalIsRefusedNotSkipped(t *testing.T) {
+	old := LexiconPath
+	dir := t.TempDir()
+	lex := filepath.Join(dir, "lex.md")
+	if err := os.WriteFile(lex, []byte("```h-signals\nauth/session: (auth|session\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	LexiconPath = func() string { return lex }
+	defer func() { LexiconPath = old }()
+
+	repo := gitRepo(t, map[string]string{"internal/auth/session.go": "package a\n"})
+	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "abc123", repo, "")
+	if err == nil {
+		t.Fatal("an uncompilable signal must be refused: skipping it silently shrinks the " +
+			"blast-radius tier while the sweep still reports that tier covered")
+	}
+	if !strings.Contains(err.Error(), "does not compile") {
+		t.Errorf("the refusal must name the broken pattern: %v", err)
+	}
+}
+
+// The vocabulary now lives outside the binary, on a cadence the binary does not control, so the
+// plan records what actually loaded. Without this a sweep against a half-loaded lexicon leaves a
+// plan byte-identical to one over a repo whose files genuinely matched nothing.
+func TestThePlanRecordsWhereItsVocabularyCameFrom(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package p\n"})
 	p := planFor(t, repo)
-	if len(p.HWorklist) != 0 {
-		t.Errorf("no vocabulary should mean no ranking: %+v", p.HWorklist)
+	for _, k := range []string{"lexicon", "lexicon_version", "signals_total"} {
+		if p.VocabProvenance[k] == "" {
+			t.Errorf("vocab_provenance is missing %q: %v", k, p.VocabProvenance)
+		}
 	}
-	if len(p.HUnmatched) != 1 {
-		t.Errorf("every production file should still be raised: %v", p.HUnmatched)
-	}
-	// And the sweep cannot then quietly complete.
-	_, code, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
-		"sha": p.SHA, "read_paths": p.ProductionFiles, "families_not_run": p.UnseededFamilies}))
-	if err != nil || code != ExitItemsOpen {
-		t.Errorf("an empty worklist must stop the sweep: code=%d err=%v", code, err)
+	if p.VocabProvenance["signals_total"] == "0" {
+		t.Error("a plan that loaded no signals should not have been produced at all")
 	}
 }
 
@@ -864,12 +923,23 @@ func TestLoweringTheDeferFloorIsCaught(t *testing.T) {
 // So the suite pins the vocabulary to the copy shipped in THIS repo. That also makes every
 // tier-split assertion below a statement about the shipped vocabulary rather than about a machine.
 func TestMain(m *testing.M) {
-	if root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
-		shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "ai-slop-lexicon.md")
-		if _, err := os.Stat(shipped); err == nil {
-			LexiconPath = func() string { return shipped }
-		}
+	// Pin the vocabulary to the SHIPPED lexicon so these tests do not depend on what happens to be
+	// installed on the machine running them. Falling back to the deployed copy would make the suite
+	// pass or fail on a developer's ~/.claude — and this used to fall back SILENTLY, which is the
+	// same "absence renders as a value" defect the tests below exist to catch.
+	root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot locate the repo root to pin the lexicon: %v\n", err)
+		os.Exit(1)
 	}
+	shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "ai-slop-lexicon.md")
+	if _, err := os.Stat(shipped); err != nil {
+		fmt.Fprintf(os.Stderr, "the shipped lexicon is missing (%v).\nThese tests must run against "+
+			"it, not against whatever is deployed in ~/.claude — a silent fallback would make the "+
+			"whole H-enumeration suite measure the developer's machine.\n", err)
+		os.Exit(1)
+	}
+	LexiconPath = func() string { return shipped }
 	os.Exit(m.Run())
 }
 

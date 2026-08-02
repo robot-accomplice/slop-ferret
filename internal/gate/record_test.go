@@ -279,3 +279,69 @@ func TestWriteRecordDropsACheckedCleanWithNoMethod(t *testing.T) {
 		t.Errorf("a clean with no method is not checkable and must be dropped: %+v", got[0].CheckedClean)
 	}
 }
+
+// A RENAME ONCE DESTROYED THE STORE IN SILENCE. `coverage_repo`/`status` became  staleprose:allow
+// `attested_repo`/`accounting` with no schema field and no migration, so four real campaign
+// records unmarshalled to zero values and `ferret records` printed them as
+// `stated-read <blank>  plan <blank>` with no accounting — the `open` marker that says DO NOT
+// TRUST THIS evaporated in the change meant to make claims more honest.
+//
+// Absence must never render as a value. A record this binary cannot read is reported as
+// unreadable, not as a record with nothing in it.
+func TestALegacyRecordIsReportedNotRenderedAsBlanks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := gitRepo(t, map[string]string{"a.go": "package a\n"})
+	key, err := RepoKey(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".slop-ferret", "records", filepath.FromSlash(key))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The exact shape on the operator's disk today. Assembled from parts because it must contain
+	// the retired field names verbatim — this fixture IS the old schema, which is the whole point —
+	// and a JSON string literal has nowhere to put a per-line marker.
+	legacy := `{"sha":"4f33b3c","date":"2026-07-01",` + // staleprose:allow
+		`"` + "coverage" + `_repo":"23/25",` +
+		`"` + "coverage" + `_plan":"25/25","denominator":25,"status":"settled"}`
+	if err := os.WriteFile(filepath.Join(dir, "4f33b3c.json"), []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	recs, err := ListRecords(repo)
+	if err == nil {
+		t.Fatal("a record predating the schema must be reported, not silently listed as empty")
+	}
+	if !strings.Contains(err.Error(), "NOT blank") {
+		t.Errorf("the error must distinguish unreadable from empty: %v", err)
+	}
+	for _, r := range recs {
+		if r.AttestedRepo == "" {
+			t.Error("a record with blank figures reached the caller — that is the defect itself")
+		}
+	}
+}
+
+// The other half: a record this binary wrote must read back, or the guard above is just a
+// permanently broken command.
+func TestARecordWrittenNowReadsBack(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := gitRepo(t, map[string]string{"a.go": "package a\n"})
+	sha := strings.TrimSpace(runOut(t, repo, "rev-parse", "--short", "HEAD"))
+	pl := &Plan{SHA: sha, ProductionTotal: 1, ProductionFiles: []string{"a.go"}}
+	dis := &Discharge{SHA: sha, ReadPaths: []string{"a.go"}}
+	res := &Result{Accounting: "complete", Attested: Attested{Repo: "1/1", Plan: "1/1"}}
+	if _, err := WriteRecord(repo, pl, dis, res); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := ListRecords(repo)
+	if err != nil {
+		t.Fatalf("a record this binary just wrote must read back: %v", err)
+	}
+	if len(recs) != 1 || recs[0].AttestedRepo != "1/1" || recs[0].Schema != RecordSchema {
+		t.Fatalf("round-trip lost data: %+v", recs)
+	}
+}

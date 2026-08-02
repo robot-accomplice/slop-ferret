@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,6 +23,23 @@ var objectID = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 // be pointed at repositories you have reason to distrust.
 var unsafeKeySegment = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
+// RecordSchema is the current record format. Bump it whenever a field is renamed or its meaning
+// changes, and give ListRecords a branch for the old shape — the alternative is what happened at
+// schema 0: unknown keys unmarshalled to zero and the store silently lost every prior figure.
+const RecordSchema = 1
+
+// ErrLegacyRecord marks a record written before the schema field existed. It is reported, never
+// rendered as blanks: a record whose figures cannot be read is not a record with no figures.
+type ErrLegacyRecord struct {
+	Path string
+}
+
+func (e *ErrLegacyRecord) Error() string {
+	return fmt.Sprintf("%s predates the record schema (written when the fields were "+
+		"`coverage_repo`/`status`) and cannot be read as current. Its figures are NOT blank — they "+ // staleprose:allow
+		"are unreadable by this binary. Re-sweep the repository, or read the file directly", e.Path)
+}
+
 // A Record is one sweep of one repository at one commit.
 //
 // TWO KINDS OF FIELD, and the split is the point. The COMPUTED half the tool derives itself. The
@@ -33,6 +51,17 @@ var unsafeKeySegment = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 // safe if the method is recorded alongside the class: "clean" with no method is not checkable, and
 // an unchecked clean is how a later sweep skips ground nobody actually covered.
 type Record struct {
+	// Schema is the record format's own version, and it exists because renaming the fields once
+	// already destroyed information silently. `coverage_repo`/`status` became  staleprose:allow
+	// `attested_repo`/`accounting` with no version and no migration, so every record written before
+	// that change unmarshalled to zero values and `ferret records` printed a real prior sweep as
+	// `stated-read <blank>  plan <blank>` with no accounting at all. The `open` marker that says DO
+	// NOT TRUST THIS evaporated in the change that was supposed to make claims more honest.
+	//
+	// A record is durable input to a future sweep. Reading one whose shape you do not recognise and
+	// rendering the gaps as blanks is the same defect as reporting an unperformed audit: absence
+	// displayed as a value.
+	Schema        int    `json:"schema"`
 	SHA           string `json:"sha"`
 	Date          string `json:"date"`
 	AttestedRepo  string `json:"attested_repo"`
@@ -187,7 +216,8 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 	}
 
 	rec := Record{
-		SHA: pl.SHA, Date: date,
+		Schema: RecordSchema,
+		SHA:    pl.SHA, Date: date,
 		AttestedRepo: res.Attested.Repo, AttestedPlan: res.Attested.Plan,
 		Denominator: pl.ProductionTotal, Waived: res.Attested.Waived,
 		WorklistSize: len(pl.HWorklist), UnmatchedSize: len(pl.HUnmatched),
@@ -227,6 +257,7 @@ func ListRecords(repo string) ([]Record, error) {
 		return nil, err
 	}
 	var out []Record
+	var legacy []error
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
@@ -236,10 +267,18 @@ func ListRecords(repo string) ([]Record, error) {
 			continue
 		}
 		var r Record
-		if json.Unmarshal(b, &r) == nil {
-			out = append(out, r)
+		if json.Unmarshal(b, &r) != nil {
+			continue
 		}
+		// A record from before the rename unmarshals cleanly and carries nothing. Reporting that as
+		// a row of blanks is how the store lost four real campaign records in silence; the caller
+		// gets told instead.
+		if r.Schema != RecordSchema {
+			legacy = append(legacy, &ErrLegacyRecord{Path: filepath.Join(dir, e.Name())})
+			continue
+		}
+		out = append(out, r)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Date > out[j].Date })
-	return out, nil
+	return out, errors.Join(legacy...)
 }

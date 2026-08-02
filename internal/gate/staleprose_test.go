@@ -33,6 +33,11 @@ func TestNoStaleCommandNamesOrRemovedFeatureClaims(t *testing.T) {
 
 	live := liveCommands(t, root)
 
+	// A line that must name a retired identifier — a migration fixture, a changelog entry recording
+	// the rename — marks itself. Deliberately narrow: one line, visible in the diff, and it says
+	// what it is. The alternative that failed twice was exempting whole files.
+	const allowMarker = "staleprose:allow"
+
 	// Retired IDENTIFIERS cannot be derived — they are gone from the code by definition, which is
 	// the whole problem. This list is the one hand-maintained part, and it is append-only: a name
 	// goes in when it is retired and never comes out.
@@ -82,9 +87,18 @@ func TestNoStaleCommandNamesOrRemovedFeatureClaims(t *testing.T) {
 				"%s: %q — cmd/ferret accepts no such command (live: %s)",
 				rel, m[0], strings.Join(sortedKeys(live), " ")))
 		}
-		for bad, why := range retired {
-			if strings.Contains(body, bad) {
-				problems = append(problems, fmt.Sprintf("%s: contains %q — %s", rel, bad, why))
+		// Line by line, so a single legitimate mention can be marked without exempting a whole
+		// file. Whole-file exemption is what let the CHANGELOG document a nonexistent command for
+		// two review cycles: the carve-out meant for history sheltered live wrong prose.
+		for n, line := range strings.Split(body, "\n") {
+			if strings.Contains(line, allowMarker) {
+				continue
+			}
+			for bad, why := range retired {
+				if strings.Contains(line, bad) {
+					problems = append(problems, fmt.Sprintf("%s:%d: contains %q — %s",
+						rel, n+1, bad, why))
+				}
 			}
 		}
 	}

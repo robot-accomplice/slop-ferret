@@ -111,9 +111,12 @@ func run(argv []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, usage)
 			return gate.ExitMisuse
 		}
+		// A legacy record is REPORTED, not swallowed and not fatal: the readable rows are still
+		// worth printing, and the unreadable ones must not simply be absent from a listing whose
+		// whole job is to tell the next sweep what ground was already covered.
 		recs, err := gate.ListRecords(args[0])
 		if err != nil {
-			return fail(err, stderr)
+			fmt.Fprintf(stderr, "ferret: %v\n", err)
 		}
 		for _, r := range recs {
 			sha := r.SHA
