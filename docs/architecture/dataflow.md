@@ -14,7 +14,7 @@ sequenceDiagram
     M->>R: parse (RTA reachability)
     M-->>SF: .magma/_dead.json, _test-only.json (codemap-rows/1, sha)
 
-    Op->>SF: slop-ferret plan <map> <sha> <repo> [--since <ref>]
+    Op->>SF: ferret plan <map> <sha> <repo> [--since <ref>]
     SF->>SF: refuse unless contract_version known AND map sha == pinned sha
     SF->>R: git ls-files
     SF->>SF: production = tracked - (tests, docs, vendored, generated)
@@ -27,7 +27,7 @@ sequenceDiagram
     A->>A: clear or refute each candidate; attest or waive each path
     A-->>SF: discharge.json
 
-    Op->>SF: slop-ferret verify plan.json discharge.json
+    Op->>SF: ferret enumerate plan.json discharge.json
     SF-->>A: coverage.repo, coverage.plan, remaining[], exit 0|3
 ```
 

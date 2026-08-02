@@ -70,7 +70,7 @@ entries (`/slop-ferret` and `/slop-ferret:report`).
 magma --depth 1 <repo> <name> ~/.slop-ferret/maps       # build the call map first
 ferret plan ~/.slop-ferret/maps/<name> <sha> <repo> [--since <ref>] > plan.json
 #   ... run the sweep, write discharge.json ...
-ferret verify plan.json discharge.json             # 0 settled · 3 items open
+ferret enumerate plan.json discharge.json             # 0 settled · 3 items open
 ```
 
 | command | does |
@@ -141,7 +141,7 @@ dir first: a half-applied update is worse than a stale one.
 ## Sweep records
 
 ```bash
-ferret verify plan.json discharge.json ~/code/target   # writes a record
+ferret enumerate plan.json discharge.json ~/code/target   # writes a record
 ferret records ~/code/target                           # prior sweeps, newest first
 ```
 
@@ -202,6 +202,11 @@ Requires Go 1.26 and [`just`](https://github.com/casey/just); `golangci-lint` fo
 - **Coverage is gated at 80%** in CI and in `just cover`.
 - **Deploying the checkout's skill tree is a build gate.** A deployed skill missing its lexicon
   produces a sweep with no vocabulary — indistinguishable from a real one, and not one.
+- **Stale prose is a build gate.** `TestNoStaleCommandNamesOrRemovedFeatureClaims` scans every
+  tracked file for command names that no longer exist and claims about removed features. Prose
+  describing behaviour the code lacks is this tool's own subject, and it shipped here four times in
+  one day because each manual sweep covered fewer places than the last. When it was first written it
+  found seven more instances, in files a by-hand pass had just been declared clean.
 - **The release gate parses `--version` positionally**, so both field offsets are pinned by a test.
   Reword that line and the tag check silently starts comparing the wrong token, which is how a
   release stops being verified without anything going red.

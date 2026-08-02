@@ -1,7 +1,7 @@
 // Command ferret is the tool half of the slop-ferret method.
 //
 //	ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-//	ferret verify <plan.json> <discharge.json>            ; 0 settled, 3 open, 4 refused
+//	ferret enumerate <plan.json> <discharge.json>            ; 0 settled, 3 open, 4 refused
 //	ferret install|update [--ref <r>] [--from <dir>]      acquire and deploy the skill
 //	ferret doctor                                         drift, in both directions
 //	ferret version                                        binary version

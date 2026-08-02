@@ -25,10 +25,10 @@ import (
 //
 // So there are three sources and one install path:
 //
-//	embedded   the copy compiled in. The bootstrap floor: always present, works offline, and is
-//	           what a fresh `go install` has before it has talked to anything.
-//	repo       the live `skill/` tree from the public repository at a ref. `slop-ferret update`.
-//	dir        a local checkout, for the edit-build-install loop. `slop-ferret install --from`.
+//	repo @ver  the repository at the tag matching this binary's version. The default: a downloaded
+//	           binary with no checkout installs the prose that version was tested with.
+//	repo @ref  the repository at an explicit ref. `ferret install --ref main`.
+//	dir        a local checkout, for the edit-install loop. `ferret install --from`.
 //
 // The skill carries its OWN version (skill/VERSION), which is now independent of the binary's.
 // `doctor` prints both and says which source the deployed copy came from, because "which skill am
