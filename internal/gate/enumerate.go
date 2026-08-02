@@ -94,6 +94,23 @@ func pct(done, total int) *float64 {
 
 // Verify reports two fractions and a work queue. Every clause below was absent at some point and
 // is here because its absence was reproduced, not imagined.
+// LoadSweep parses a plan and a discharge and enumerates them, returning all three. It exists so
+// that `report` derives its coverage figures from THE SAME parse and THE SAME arithmetic that
+// `enumerate` runs, rather than from numbers an auditor typed into a findings file.
+//
+// The renderer used to take every figure as model-supplied JSON while a comment claimed they
+// "come from enumerate so the report cannot disagree" — and the field names did not even match, so
+// the seam had never carried a byte. Routing both commands through one function is what makes that
+// claim structurally true instead of aspirational: there is no longer a parameter to disagree with.
+func LoadSweep(planPath, dischargePath string) (*Plan, *Discharge, *Result, int, error) {
+	pl, dis, err := loadPlanAndDischarge(planPath, dischargePath)
+	if err != nil {
+		return nil, nil, nil, ExitMisuse, err
+	}
+	res, code, err := Enumerate(planPath, dischargePath)
+	return pl, dis, res, code, err
+}
+
 func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, error) {
 	pb, err := os.ReadFile(planPath)
 	if err != nil {

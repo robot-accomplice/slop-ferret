@@ -70,13 +70,15 @@ entries (`/slop-ferret` and `/slop-ferret:report`).
 magma --depth 1 <repo> <name> ~/.slop-ferret/maps       # build the call map first
 ferret plan ~/.slop-ferret/maps/<name> <sha> <repo> [--since <ref>] > plan.json
 #   ... run the sweep, write discharge.json ...
-ferret enumerate plan.json discharge.json             # 0 settled · 3 items open
+ferret enumerate plan.json discharge.json             # 0 accounted · 3 items open
+ferret report plan.json discharge.json findings.json report.html
 ```
 
 | command | does |
 |---|---|
 | `plan` | reads the magma map, raises candidates with their pre-filing bars, enumerates the family-H worklist **and its complement** |
-| `verify` | reports two coverage fractions and a work queue |
+| `enumerate` | reports two attested fractions and a work queue |
+| `report` | renders the sweep page; every figure derived from the plan and the discharge, never typed |
 | `install` / `update` | synonyms — acquire the skill and deploy it |
 | `doctor` | drift between the deployed skill and its source, in both directions |
 | `records` | prior sweeps of a repository, newest first |

@@ -135,3 +135,41 @@ func TestTemplateHasNoUnrenderedActions(t *testing.T) {
 		t.Error("unrendered template actions in the output")
 	}
 }
+
+// Severity and status are enums, and both used to fail open toward "looks fine": an unknown
+// severity took rank 0 from a bare map lookup — the same rank as `blocking` — so it sorted to the
+// top of a severity-ordered page while sevclass painted it the green `note` chip. Reproduced with
+// "catastrophic" on a trailing-whitespace finding, ranked above an auth bypass.
+func TestAnUnknownSeverityIsRefusedRatherThanRanked(t *testing.T) {
+	for _, sev := range []string{"catastrophic", "", "CRITICAL"} {
+		b := []byte(`{"repo":"x","findings":[{"title":"t","severity":"` + sev +
+			`","status":"VERIFIED","file":"a.go"}]}`)
+		if _, err := ParseAuthored(b); err == nil {
+			t.Errorf("severity %q must be refused: an unrecognised value used to sort as the most "+
+				"severe while rendering as the least", sev)
+		}
+	}
+}
+
+// VERIFIED/SUSPECTED is carried by the card's border and hatching, not a caption. A third value
+// rendered a card with neither, indistinguishable from an ordinary one, while the counter tallied
+// it as suspected.
+func TestAnUnknownStatusIsRefused(t *testing.T) {
+	b := []byte(`{"repo":"x","findings":[{"title":"t","severity":"note","status":"CONFIRMED","file":"a.go"}]}`)
+	if _, err := ParseAuthored(b); err == nil {
+		t.Error("status CONFIRMED must be refused — it renders as neither VERIFIED nor SUSPECTED")
+	}
+}
+
+// A well-formed findings file must still parse, or the refusals above are just a broken command.
+func TestAWellFormedFindingsFileParses(t *testing.T) {
+	b := []byte(`{"repo":"x","skill_version":"s","lexicon_version":"l","families_run":["H"],
+	  "findings":[{"title":"t","severity":"blocking","status":"VERIFIED","file":"a.go"}]}`)
+	a, err := ParseAuthored(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Findings) != 1 || a.Repo != "x" {
+		t.Fatalf("parsed = %+v", a)
+	}
+}
