@@ -7,7 +7,8 @@ import (
 )
 
 // The plan's `instructions` string is the machine-readable definition of the discharge a sweeper
-// writes — the role `ferret discharge` filled before it was deleted. FromSweep and the record read
+// writes — the role the removed `discharge` command filled before it was deleted. FromSweep and the
+// record read
 // six OPTIONAL attested fields (tier, checked_clean, near_misses, findings_verified,
 // findings_suspected, report_path) that the instructions never named, so a sweeper had no way to
 // know they exist: discharge.json never carried them, FromSweep read them empty, and the report's
