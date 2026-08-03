@@ -241,3 +241,51 @@ func TestTheAttestedPlanFractionCountsEveryRaisedItemAndEveryOpenOne(t *testing.
 		t.Errorf("attested.plan = %q, want everything dispositioned", res2.Attested.Plan)
 	}
 }
+
+// THE DISCHARGE MUST BELONG TO THIS PLAN, and neither branch of that check was reached by any test
+// — mechanical mutation reported both as NOT COVERED, which is weaker than surviving: a mutant that
+// no test executes is a line nothing at all is watching.
+//
+// It matters more than it did. `enumerate` and `report` now derive every published figure from the
+// plan and the discharge, so a discharge that drifts in from another sweep does not merely fail to
+// bind — it supplies the numbers. `verify` once referenced neither sha nor contract, so any
+// discharge satisfied any plan, and stale artifacts demonstrably survive across sessions.
+func TestADischargeFromAnotherSweepCannotSatisfyThisPlan(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	p := planFor(t, repo)
+	all := append([]string{}, p.ProductionFiles...)
+
+	for _, c := range []struct{ name, sha, want string }{
+		{"no sha at all", "", "cannot be shown to belong"},
+		{"a different sweep's sha", "0badc0de", "belongs to a different sweep"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res, code, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
+				"sha": c.sha, "read_paths": all, "families_not_run": p.UnseededFamilies}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if code == ExitOK || res.Accounting == "complete" {
+				t.Fatalf("an unbound discharge settled the sweep: code=%d accounting=%q. Every "+
+					"figure on the report is derived from this file", code, res.Accounting)
+			}
+			found := false
+			for _, r := range res.Remaining {
+				if strings.Contains(r, c.want) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("the open item must say WHY the discharge does not bind (%q): %v",
+					c.want, res.Remaining)
+			}
+		})
+	}
+
+	// The matching discharge still settles, so the assertions above are about the binding rather
+	// than about the sweep being unfinished.
+	if _, code, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
+		"sha": p.SHA, "read_paths": all, "families_not_run": p.UnseededFamilies})); err != nil || code != ExitOK {
+		t.Errorf("the plan's own discharge must settle: code=%d err=%v", code, err)
+	}
+}

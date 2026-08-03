@@ -374,21 +374,6 @@ func TestTheTwoFractionsCanDisagreeWhichIsThePoint(t *testing.T) {
 	}
 }
 
-// A discharge from another sweep once satisfied any plan, and stale artifacts demonstrably survive
-// across sessions.
-func TestADischargeFromAnotherSweepDoesNotSatisfyThisPlan(t *testing.T) {
-	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
-	pl := planFor(t, repo)
-	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
-		"sha": "OTHER", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"}}))
-	if c != 3 {
-		t.Fatal("a foreign discharge must not settle")
-	}
-	if !strings.Contains(strings.Join(res.Remaining, " "), "different sweep") {
-		t.Errorf("remaining=%v", res.Remaining)
-	}
-}
-
 // "COMPLETE, no findings" was the single most consequential thing this emitted, and the
 // clean-sweep path — file nothing, clear nothing, attest the reads — was certified with every
 // candidate unexamined. Measured against a real plan: 12 candidates, 0 cleared, COMPLETE, exit 0.
