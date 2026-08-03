@@ -295,3 +295,31 @@ func TestFromSweepTakesTheLexiconLabelFromThePlan(t *testing.T) {
 			"what plan loaded, not what the findings file claimed", in.LexiconVer)
 	}
 }
+
+// A family the enumeration derived as NOT run must never also print as run. families_run is the
+// auditor's claim; families_not_run is derived from what they actually dispositioned. A page that
+// lists the same family in both contradicts itself — derived-not-run wins. Break it: set FamiliesRun
+// straight from the findings again and this goes red.
+func TestFromSweepDoesNotShowAFamilyAsBothRunAndNotRun(t *testing.T) {
+	a := Authored{FamiliesRun: []string{"A", "C", "H"}}
+	res := &gate.Result{FamiliesDeclaredNotRun: []string{"C"}}
+	in := FromSweep(&gate.Plan{SHA: "s"}, &gate.Discharge{}, res, a)
+	for _, f := range in.FamiliesRun {
+		if f == "C" {
+			t.Errorf("family C shown as run while the enumeration derived it not-run: run=%v not=%v",
+				in.FamiliesRun, in.FamiliesNot)
+		}
+	}
+	found := false
+	for _, f := range in.FamiliesNot {
+		if f == "C" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("family C must remain in FamiliesNot: %v", in.FamiliesNot)
+	}
+	if len(in.FamiliesRun) != 2 {
+		t.Errorf("FamiliesRun = %v, want the two genuinely-run families [A H]", in.FamiliesRun)
+	}
+}

@@ -289,3 +289,21 @@ func TestADischargeFromAnotherSweepCannotSatisfyThisPlan(t *testing.T) {
 		t.Errorf("the plan's own discharge must settle: code=%d err=%v", code, err)
 	}
 }
+
+// A mistyped key in a plan or discharge — `read_path` for `read_paths` — otherwise unmarshals to
+// nothing, and the sweep silently reports zero of whatever that field carried: a wrong result with
+// no error, the class this tool hunts. ParseAuthored already refuses unknown fields in the findings
+// file; the plan and the discharge drive everything and did not. Break it: revert loadPlanAndDischarge
+// to json.Unmarshal and this goes red.
+func TestLoadRefusesUnknownFieldsInPlanOrDischarge(t *testing.T) {
+	good := writeJSON(t, map[string]any{"sha": "abc1234"})
+	badDischarge := writeJSON(t, map[string]any{"sha": "abc1234", "read_path": []string{"a.go"}})
+	if _, _, err := loadPlanAndDischarge(good, badDischarge); err == nil {
+		t.Error("a discharge with an unknown field (read_path vs read_paths) must be refused, not " +
+			"silently ignored — the sweep would report zero files read with no error")
+	}
+	badPlan := writeJSON(t, map[string]any{"sha": "abc1234", "shaa": "x"})
+	if _, _, err := loadPlanAndDischarge(badPlan, good); err == nil {
+		t.Error("a plan with an unknown field must be refused")
+	}
+}

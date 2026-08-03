@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -111,6 +112,15 @@ func LoadSweep(planPath, dischargePath string) (*Plan, *Discharge, *Result, int,
 	return pl, dis, res, code, err
 }
 
+// decodeStrict rejects unknown fields. ParseAuthored already refuses them in the findings file; the
+// plan and the discharge drive everything and did not, so a mistyped key (read_path for read_paths)
+// unmarshalled to nothing and the sweep reported zero of whatever it carried, with no error.
+func decodeStrict(b []byte, v any) error {
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	return d.Decode(v)
+}
+
 func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, error) {
 	pb, err := os.ReadFile(planPath)
 	if err != nil {
@@ -121,12 +131,14 @@ func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, er
 		return nil, nil, die(ExitMisuse, "reading discharge: %v", err)
 	}
 	var pl Plan
-	if err := json.Unmarshal(pb, &pl); err != nil {
-		return nil, nil, die(ExitMisuse, "plan is not valid JSON: %v", err)
+	if err := decodeStrict(pb, &pl); err != nil {
+		return nil, nil, die(ExitMisuse, "plan is not valid JSON or carries an unknown field "+
+			"(a typo silently reads back as nothing): %v", err)
 	}
 	var dis Discharge
-	if err := json.Unmarshal(db, &dis); err != nil {
-		return nil, nil, die(ExitMisuse, "discharge is not valid JSON: %v", err)
+	if err := decodeStrict(db, &dis); err != nil {
+		return nil, nil, die(ExitMisuse, "discharge is not valid JSON or carries an unknown field "+
+			"(a typo silently reads back as nothing): %v", err)
 	}
 	return &pl, &dis, nil
 }

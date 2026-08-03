@@ -187,13 +187,31 @@ func severities() []string {
 // FromSweep assembles the page. The coverage half comes from the plan and the enumeration; the
 // findings half from the auditor. Keeping the assembly in one function is the binding: there is no
 // path that reaches Render with a typed-in fraction.
+// familiesActuallyRun drops from the auditor's families_run any family the enumeration derived as
+// not-run. families_run is the auditor's claim; families_not_run is derived from what was actually
+// dispositioned, and a page that shows one family in both lists contradicts itself — so the derived
+// not-run set wins.
+func familiesActuallyRun(claimed, derivedNotRun []string) []string {
+	notRun := make(map[string]bool, len(derivedNotRun))
+	for _, f := range derivedNotRun {
+		notRun[strings.ToUpper(strings.TrimSpace(f))] = true
+	}
+	var run []string
+	for _, f := range claimed {
+		if !notRun[strings.ToUpper(strings.TrimSpace(f))] {
+			run = append(run, f)
+		}
+	}
+	return run
+}
+
 func FromSweep(pl *gate.Plan, dis *gate.Discharge, res *gate.Result, a Authored) Input {
 	in := Input{
 		// The lexicon label is COMPUTED by ferret plan (what it actually loaded), not typed by the
 		// auditor: a model-supplied version that disagrees with the loaded one would be a lie on the
 		// page, and a half-loaded lexicon is otherwise invisible.
 		Repo: a.Repo, SkillVersion: a.SkillVersion, LexiconVer: pl.VocabProvenance["lexicon_version"],
-		FamiliesRun: a.FamiliesRun, Findings: a.Findings,
+		FamiliesRun: familiesActuallyRun(a.FamiliesRun, res.FamiliesDeclaredNotRun), Findings: a.Findings,
 
 		SHA:          pl.SHA,
 		Denominator:  pl.ProductionTotal,
