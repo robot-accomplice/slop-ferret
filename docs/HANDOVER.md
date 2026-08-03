@@ -168,9 +168,13 @@ validation is untested because it does unmockable network I/O — closing it nee
 - **No Claude/Anthropic attribution** in commits or PR bodies.
 - Reports are **local `.html` files delivered with `SendUserFile`** — never published, never a hosted
   URL, never committed into a target repo.
-- `~/.slop-ferret/records/` holds 5 real records from earlier campaigns. They predate the schema
-  field and the key change; `ferret records` reports them as unreadable and names their old location
-  rather than listing them as empty. Do not delete them without asking.
+- `~/.slop-ferret/records/` was **cleared on 2026-08-03** for a clean slate. The five schema-0
+  records from earlier campaigns (ghola, counterspy, roboticus-rust, two for slop-ferret) are gone.
+  A sweep run from here writes the first record in the current schema, so the legacy-location
+  reporting path in `ListRecords` is now exercised only by its tests — do not read a passing
+  `ferret records` as evidence that path works.
+- `~/.slop-ferret/maps/` was kept. It holds the roboticus-rust map that cost 68 minutes to build and
+  is the source of `internal/gate/testdata/real-magma-rust-*.json`.
 
 ## Outstanding, not code
 
