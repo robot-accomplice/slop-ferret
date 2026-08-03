@@ -1,0 +1,81 @@
+# A synthetic file list standing in for a large repository, committed so the tier split's
+# behaviour is RE-DERIVABLE by someone who was not there.
+#
+# gate.go used to instruct "re-measure required/deferred on real repos after any edit here" and
+# cite ghola @4f33b3c, roboticus (no sha) and counterspy (no sha) — private, unpinned, and in one
+# case a sha that no longer resolves. That instruction was unfollowable, while README and the C4 doc
+# both claimed "the measurements live in comments beside the tests that pin them". No test pinned
+# hDeferFloor at all: lowering it kept CI green.
+#
+# 70 paths: 40 tier-1 (money) and 30 tier-2 (network), so the list exceeds hDeferFloor (60) and the
+# split actually engages. TestTheTierSplitIsReDerivableFromAFixture asserts the outcome.
+internal/wallet/pay01.go
+internal/wallet/pay02.go
+internal/wallet/pay03.go
+internal/wallet/pay04.go
+internal/wallet/pay05.go
+internal/wallet/pay06.go
+internal/wallet/pay07.go
+internal/wallet/pay08.go
+internal/wallet/pay09.go
+internal/wallet/pay10.go
+internal/treasury/ledger01.go
+internal/treasury/ledger02.go
+internal/treasury/ledger03.go
+internal/treasury/ledger04.go
+internal/treasury/ledger05.go
+internal/treasury/ledger06.go
+internal/treasury/ledger07.go
+internal/treasury/ledger08.go
+internal/treasury/ledger09.go
+internal/treasury/ledger10.go
+internal/billing/invoice01.go
+internal/billing/invoice02.go
+internal/billing/invoice03.go
+internal/billing/invoice04.go
+internal/billing/invoice05.go
+internal/billing/invoice06.go
+internal/billing/invoice07.go
+internal/billing/invoice08.go
+internal/billing/invoice09.go
+internal/billing/invoice10.go
+internal/settle/refund01.go
+internal/settle/refund02.go
+internal/settle/refund03.go
+internal/settle/refund04.go
+internal/settle/refund05.go
+internal/settle/refund06.go
+internal/settle/refund07.go
+internal/settle/refund08.go
+internal/settle/refund09.go
+internal/settle/refund10.go
+internal/client/download01.go
+internal/client/download02.go
+internal/client/download03.go
+internal/client/download04.go
+internal/client/download05.go
+internal/client/download06.go
+internal/client/download07.go
+internal/client/download08.go
+internal/client/download09.go
+internal/client/download10.go
+internal/transport/stream01.go
+internal/transport/stream02.go
+internal/transport/stream03.go
+internal/transport/stream04.go
+internal/transport/stream05.go
+internal/transport/stream06.go
+internal/transport/stream07.go
+internal/transport/stream08.go
+internal/transport/stream09.go
+internal/transport/stream10.go
+internal/proxy/dial01.go
+internal/proxy/dial02.go
+internal/proxy/dial03.go
+internal/proxy/dial04.go
+internal/proxy/dial05.go
+internal/proxy/dial06.go
+internal/proxy/dial07.go
+internal/proxy/dial08.go
+internal/proxy/dial09.go
+internal/proxy/dial10.go

@@ -1,0 +1,268 @@
+// Command ferret is the tool half of the slop-ferret method.
+//
+//	ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
+//	ferret enumerate <plan.json> <discharge.json>         0 accounted, 3 open, 4 refused
+//	ferret report <plan> <discharge> <findings> <out>     render the sweep page
+//	ferret install|update [--ref <r>] [--from <dir>]      acquire and deploy the skill
+//	ferret doctor                                         drift, in both directions
+//	ferret version                                        binary version
+//
+// The name is the hunter, not the quarry: this ferrets slop out, it does not produce it.
+//
+// The split it enforces: DETERMINISTIC TRANSFORMS belong here, JUDGEMENT belongs in the skill.
+// Enumerating files and computing coverage fractions need no model. Deciding whether a finding
+// clears its pre-filing bar does, and no amount of Go will do it.
+//
+// That split is why `report` takes the plan and the discharge rather than one findings file: the
+// page's PROSE is judgement and comes from the auditor, while its ARITHMETIC is a transform and is
+// recomputed here from the same inputs `enumerate` reads. A version of this comment used to say
+// the report was "authored rather than generated" — it said so in the same file that dispatches to
+// a renderer, which is the defect class this tool exists to hunt.
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/robot-accomplice/slop-ferret/internal/gate"
+	"github.com/robot-accomplice/slop-ferret/internal/install"
+	"github.com/robot-accomplice/slop-ferret/internal/report"
+)
+
+// binVersion is this binary's own version, and it is DELIBERATELY not the skill's. They were one
+// number while the skill was compiled in, which meant a lexicon wording change needed a binary
+// release to reach a sweep. Two artifacts, two cadences, two versions.
+const binVersion = "0.1.0"
+
+const usage = `ferret — ferrets AI slop out of a repository
+
+  ferret plan <map-dir> <sha> <repo> [--since <ref>]    > plan.json
+
+  ferret enumerate <plan.json> <discharge.json> [<repo>]  0 accounted · 3 items open · 4 refused
+  ferret report <plan.json> <discharge.json> <findings.json> <out.html>
+  ferret records <repo>                                 prior sweeps, newest first
+  ferret install [--ref <ref>] [--from <dir>]           acquire the skill and deploy it
+  ferret update                                         synonym of install
+  ferret doctor                                         drift, in both directions
+  ferret version                                        binary version
+
+The skill (SKILL.md, the lexicon) is NOT compiled into this binary. install fetches it from the
+repository at the tag matching this binary's version; --ref tracks something else, --from reads a
+local checkout.
+
+Pairs with magma, which builds the call map plan reads. Run magma first; a map of a different tree
+is refused by construction.`
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run is main's body with the process boundary lifted out, so dispatch is testable. main() itself
+// then contains nothing that can be wrong except the wiring a compiler already checks.
+func run(argv []string, stdout, stderr io.Writer) int {
+	if len(argv) < 1 {
+		fmt.Fprintln(stderr, usage)
+		return gate.ExitMisuse
+	}
+	args := argv[1:]
+	switch argv[0] {
+	case "plan":
+		return cmdPlan(args, stdout, stderr)
+	case "enumerate":
+		return cmdVerify(args, stdout, stderr)
+	case "install", "update": // D4: synonyms — both acquire prose and deploy it
+		return cmdInstall(args, stdout, stderr)
+	case "report":
+		// The plan and the discharge are arguments so that every coverage figure on the page is
+		// DERIVED from them here, by the same code `enumerate` runs. The findings file carries no
+		// fraction and has nowhere to put one.
+		if len(args) != 4 {
+			fmt.Fprintln(stderr, usage)
+			return gate.ExitMisuse
+		}
+		pl, dis, res, _, err := gate.LoadSweep(args[0], args[1])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		b, err := os.ReadFile(args[2])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		authored, err := report.ParseAuthored(b)
+		if err != nil {
+			return fail(err, stderr)
+		}
+		f, err := os.Create(args[3])
+		if err != nil {
+			return fail(err, stderr)
+		}
+		defer f.Close()
+		if err := report.Render(f, report.FromSweep(pl, dis, res, authored)); err != nil {
+			return fail(err, stderr)
+		}
+		// An incomplete sweep still gets a page — the report is how you SEE that it is incomplete.
+		// The accounting reaches the reader on the page, not by withholding it.
+		fmt.Fprintf(stderr, "report written: %s (accounting: %s)\n", args[3], res.Accounting)
+		return gate.ExitOK
+	case "records":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, usage)
+			return gate.ExitMisuse
+		}
+		// A legacy record is REPORTED, not swallowed and not fatal: the readable rows are still
+		// worth printing, and the unreadable ones must not simply be absent from a listing whose
+		// whole job is to tell the next sweep what ground was already covered.
+		recs, err := gate.ListRecords(args[0])
+		if err != nil {
+			fmt.Fprintf(stderr, "ferret: %v\n", err)
+		}
+		for _, r := range recs {
+			sha := r.SHA
+			if len(sha) > 12 {
+				sha = sha[:12]
+			}
+			// The store is keyed by root commit now, so the directory name is a hash. The origin
+			// is printed here instead — readable where a human actually reads it, and recorded
+			// rather than trusted: it never places the record.
+			origin := r.Origin
+			if origin == "" {
+				origin = "(no remote)"
+			}
+			fmt.Fprintf(stdout, "%s  %s  stated-read %s  plan %s  %s  %s\n",
+				r.Date, sha, r.AttestedRepo, r.AttestedPlan, r.Accounting, origin)
+		}
+		return gate.ExitOK
+	case "doctor":
+		// doctor describes what is ON DISK, so it must work with no source at all. "I cannot reach
+		// the network" is not a reason to refuse to report the deployed copy.
+		src, cleanup, err := sourceFor(args)
+		if err != nil {
+			return install.Doctor(stdout, install.Source{}, binVersion)
+		}
+		defer cleanup()
+		return install.Doctor(stdout, src, binVersion)
+	// `--version` is spelled both ways on purpose: release.yml parses it to check the tag against
+	// the binary, matching the sibling projects' release gate. It reports only the BINARY version —
+	// the binary no longer carries prose, so it has no skill version to report (D3).
+	case "version", "--version", "-v":
+		fmt.Fprintf(stdout, "ferret %s\n", binVersion)
+		return gate.ExitOK
+	default:
+		fmt.Fprintln(stderr, usage)
+		return gate.ExitMisuse
+	}
+}
+
+func flagValue(args []string, name string) ([]string, string) {
+	for i := 0; i < len(args); i++ {
+		if args[i] == name && i+1 < len(args) {
+			v := args[i+1]
+			return append(args[:i:i], args[i+2:]...), v
+		}
+	}
+	return args, ""
+}
+
+func has(args []string, name string) bool {
+	for _, a := range args {
+		if a == name {
+			return true
+		}
+	}
+	return false
+}
+
+// sourceFor turns the flags into a Source. Order matters: an explicit --from or --ref beats the
+// default, and the default is the repository at this binary's own version (D8). There is no
+// compiled-in copy to fall back on, so every path here acquires prose from somewhere real.
+func sourceFor(args []string) (install.Source, func(), error) {
+	noop := func() {}
+	if _, dir := flagValue(args, "--from"); dir != "" {
+		s, err := install.DirSource(dir)
+		return s, noop, err
+	}
+	if _, ref := flagValue(args, "--ref"); ref != "" {
+		return install.Fetch(ref)
+	}
+	return install.DefaultSource(binVersion)
+}
+
+func cmdInstall(args []string, stdout, stderr io.Writer) int {
+	src, cleanup, err := sourceFor(args)
+	if err != nil {
+		fmt.Fprintf(stderr, "ferret: %v\n", err)
+		fmt.Fprintln(stderr, "  the installed skill is untouched")
+		return gate.ExitMisuse
+	}
+	defer cleanup()
+	return install.Install(stdout, src, has(args, "--force"))
+}
+
+func fail(err error, stderr io.Writer) int {
+	code := gate.ExitMisuse
+	if e, ok := err.(*gate.Err); ok {
+		code = e.Code
+	}
+	fmt.Fprintf(stderr, "ferret: %v\n", err)
+	return code
+}
+
+func cmdPlan(args []string, stdout, stderr io.Writer) int {
+	args, since := flagValue(args, "--since")
+	if len(args) != 3 {
+		fmt.Fprintln(stderr, usage)
+		return gate.ExitMisuse
+	}
+	p, err := gate.BuildPlan(args[0], args[1], args[2], since)
+	if err != nil {
+		return fail(err, stderr)
+	}
+	b, _ := json.MarshalIndent(p, "", " ")
+	fmt.Fprintln(stdout, string(b))
+	return 0
+}
+
+func cmdVerify(args []string, stdout, stderr io.Writer) int {
+	record := !has(args, "--no-record")
+	args = without(args, "--no-record")
+	// The third positional is the swept repo. Without it there is nothing to key a record by and
+	// nothing to resolve the sha against, so verify still runs and simply records nothing — an
+	// absent repo is a narrower invocation, not a mistake.
+	if len(args) != 2 && len(args) != 3 {
+		fmt.Fprintln(stderr, usage)
+		return gate.ExitMisuse
+	}
+	repo := ""
+	if len(args) == 3 {
+		repo = args[2]
+	}
+	res, path, code, err := gate.EnumerateAndRecord(args[0], args[1], repo, record)
+	// A record failure must NOT discard the verify result the operator already earned, and must not
+	// masquerade as misuse. Warn and carry on with the real exit code. (ABORT M2: this returned
+	// exit 2 with empty stdout at the most expensive moment of a sweep — the end.)
+	if err != nil && res == nil {
+		return fail(err, stderr)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "ferret: warning: %v\n", err)
+		fmt.Fprintln(stderr, "  the verify result below still stands; only the record was not written")
+	}
+	b, _ := json.MarshalIndent(res, "", " ")
+	fmt.Fprintln(stdout, string(b))
+	if path != "" {
+		fmt.Fprintf(stderr, "recorded: %s\n", path)
+	}
+	return code
+}
+
+func without(args []string, flag string) []string {
+	out := args[:0:0]
+	for _, a := range args {
+		if a != flag {
+			out = append(out, a)
+		}
+	}
+	return out
+}

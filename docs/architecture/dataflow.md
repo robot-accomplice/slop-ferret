@@ -14,7 +14,7 @@ sequenceDiagram
     M->>R: parse (RTA reachability)
     M-->>SF: .magma/_dead.json, _test-only.json (codemap-rows/1, sha)
 
-    Op->>SF: slop-ferret plan <map> <sha> <repo> [--since <ref>]
+    Op->>SF: ferret plan <map> <sha> <repo> [--since <ref>]
     SF->>SF: refuse unless contract_version known AND map sha == pinned sha
     SF->>R: git ls-files
     SF->>SF: production = tracked - (tests, docs, vendored, generated)
@@ -27,8 +27,8 @@ sequenceDiagram
     A->>A: clear or refute each candidate; attest or waive each path
     A-->>SF: discharge.json
 
-    Op->>SF: slop-ferret verify plan.json discharge.json
-    SF-->>A: coverage.repo, coverage.plan, remaining[], exit 0|3
+    Op->>SF: ferret enumerate plan.json discharge.json
+    SF-->>A: attested.repo, attested.plan, remaining[], exit 0|3
 ```
 
 ## Where each number comes from
@@ -40,8 +40,8 @@ sequenceDiagram
 | `h_worklist` | production paths matching an H signal — a **ranking**, not an admission gate |
 | `h_unmatched` | `production − h_worklist` — the files no signal reached |
 | `h_unmatched_changes` | changed-since-`<ref>` files no signal reached — a **strict subset** of the blind spots, bounded by the baseline |
-| `coverage.repo` | `|read ∩ production| / |production|`. **Waived counts as unread.** |
-| `coverage.plan` | dispositioned items / (required + deferred + unmatched) |
+| `attested.repo` | `|read ∩ production| / |production|`. **Waived counts as unread.** |
+| `attested.plan` | dispositioned items / (required + deferred + unmatched) |
 | exit code | `3` if anything raised is undispositioned, else `0`. Bookkeeping only. |
 
 ## The two enumerations, and why both exist
@@ -66,7 +66,7 @@ was found by hand and became the sweep's worst finding.
 
 ```mermaid
 graph LR
-    embed["embedded skill<br/>(compiled in)"] --> classify
+    repoat["repo @ v&lt;binVersion&gt;<br/>(the default)"] --> stage
     tarball["repo tarball<br/>@ resolved commit"] --> stage["temp dir"] --> classify
     dir["local checkout"] --> classify
 

@@ -1,6 +1,6 @@
 ---
 name: slop-ferret
-description: Sweep a repository for AI slop-ferret — work that LOOKS finished and is not. Dead-on-arrival features, tests that cannot fail, guards that cannot fire, fabricated claims, duplicated rules, architectural drift, and latent "almost right" defects. Use when asked to audit, sweep, or hunt slop in a codebase; as a pre-release gate on a frozen branch; or after a large burst of work. Additive-only against the target tree — never edits in place. Every finding must clear a verification gate before it is written up; SUSPECTED findings are reported to the operator, never filed; nothing is filed until the destination tracker is confirmed. Always ends with /slop-ferret:report, which builds the HTML report.
+description: Sweep a repository for AI slop — work that LOOKS finished and is not. Dead-on-arrival features, tests that cannot fail, guards that cannot fire, fabricated claims, duplicated rules, architectural drift, and latent "almost right" defects. Use when asked to audit, sweep, or hunt slop in a codebase; as a pre-release gate on a frozen branch; or after a large burst of work. Additive-only against the target tree — never edits in place. Every finding must clear a verification gate before it is written up; SUSPECTED findings are reported to the operator, never filed; nothing is filed until the destination tracker is confirmed. Always ends with /slop-ferret:report, which builds the HTML report.
 allowed-tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch, TodoWrite, SendUserFile, Skill
 disable-model-invocation: true
 ---
@@ -73,20 +73,20 @@ on, unreachable from its own entry point. If you are not running a control, skip
 class: what decides membership, the discriminator against its nearest neighbour, a detection method, and
 **the severity**. Record its version in your report.
 
-**There is ONE lexicon file**, and it is the one in this skill directory. `slop-ferret install` writes it
+**There is ONE lexicon file**, and it is the one in this skill directory. `ferret install` writes it
 there from the binary, so there is no second copy to reconcile and no vault, note-app or symlink in
 the path. This used to be mirrored by hand into an Obsidian vault, and the hand-mirroring is exactly
 what broke: on 2026-08-01 the two copies had drifted while both still declared version
 `2026-07-26.1`, because a version string cannot detect an edit that did not bump it. Two copies under
 one name make every recorded version meaningless. The dependency is gone rather than symlinked
-around — `slop-ferret doctor` reports drift between the installed copy and the binary that wrote it, which
+around — `ferret doctor` reports drift between the installed copy and the binary that wrote it, which
 is the check the mirroring ritual was reaching for and never achieved.
 
 **Stop condition:** the in-skill file is missing. Do not improvise a vocabulary and do not emit a
 verdict block — a sweep without its class definitions produces a report indistinguishable from a real
-one, and is not one. Run `slop-ferret doctor`; a missing file is exactly what it reports.
+one, and is not one. Run `ferret doctor`; a missing file is exactly what it reports.
 
-**1b. Record THIS SKILL's own identity.** Run `slop-ferret doctor` and put the version it prints in the
+**1b. Record THIS SKILL's own identity.** Run `ferret doctor` and put the version it prints in the
 report beside the lexicon version. **A non-zero exit is a stop condition:** either the deployed copy
 drifted from the binary that installed it, or the install is incomplete — in both cases the version
 you would record is not the version you are running. `doctor` names the file and the direction, so
@@ -166,10 +166,12 @@ seam is a script contract, not a narrated one:
 
 ```bash
 SHA=$(git -C <repo> rev-parse --short HEAD)                      # CLEAN tree, always
-magma --depth 1 <repo> <name> ~/.slop-ferret/maps                        # rows land in <name>/.magma/
-slop-ferret plan ~/.slop-ferret/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
+magma --depth 1 <repo> <name> ~/.slop-ferret/maps                # rows land in <name>/.magma/
+ferret plan ~/.slop-ferret/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
 # ... do the sweep: read every plan.h_required path; account for EVERY candidate ...
-slop-ferret verify plan.json discharge.json   # two fractions + a work queue; 0 settled · 3 items open
+#   ... write discharge.json: every path you read, every candidate dispositioned ...
+ferret enumerate plan.json discharge.json <repo>  # 0 accounted · 3 items open · 4 refused
+ferret report plan.json discharge.json findings.json report.html
 ```
 
 **The generator is `magma` (`~/go/bin/magma`), and four of its properties bite.** Confirmed with
@@ -182,11 +184,15 @@ its maintainer 2026-08-01:
   magma's version, so an unchanged repo reports "already fresh" and writes nothing — silently
   producing a stale map from a magma you just fixed. `generator` in the envelope names the build
   that wrote a map; check it rather than the run's exit code.
-- **Never gate on a dirty tree.** magma stamps a dirty map's `sha` as `<sha>+<diffhash>`, which can
-  never equal a pinned commit, so the gate refuses by construction. That is the point: a dirty map
-  reports in-flight, not-yet-wired code as dead, and its sha is *disproportionately* likely to
-  evaporate because in-flight commits get amended or rebased away. Two earlier roboticus sweeps
-  pinned dirty-map shas and neither resolves today.
+- **Never gate on a dirty tree.** magma stamps the marker in **`tree`** (`<sha>-dirty`) and leaves
+  `sha` as the clean head sha. `ferret plan` refuses when `tree` disagrees with `sha`. Until
+  2026-08-02 this file claimed the marker was in `sha` as `<sha>+<diffhash>` and that the gate
+  therefore "refuses by construction" — the gate compared `sha`, the comparison passed, and a dirty
+  map was accepted with exit 0. The guarantee was prose for its whole life, and it was found by
+  sweeping magma rather than by any test here. A dirty map reports in-flight, not-yet-wired code as
+  dead, and its boundary is *disproportionately* likely to evaporate because in-flight commits get
+  amended or rebased away: two earlier roboticus sweeps pinned dirty-map boundaries and neither
+  resolves today.
 - **Three contract strings, not interchangeable.** `codemap-rows/1` (row files — the only one this
   gate may accept), `codemap-graph/1` (`graph.json`), `magma-code-graph/1` (the architext emit).
 
@@ -197,7 +203,7 @@ refactor order for code that should be left alone. The gate reports these in
 `plan.unseeded_families` and they must appear as NOT RUN in the verdict block. They may never be
 reported as checked-clean.
 
-`slop-ferret plan` (in the `slop-ferret` binary, with its own suite) **refuses** unless the map is the right tree
+`ferret plan` (in the `ferret` binary, with its own suite) **refuses** unless the map is the right tree
 (`sha`) and a shape it parses (`contract_version`) — so a stale or reshaped map fails loud, not
 silently. It turns map rows into per-family **candidates carrying each class's pre-filing bar** (and a
 heavier bar when the map's `fidelity` is weaker than a real call graph), and it enumerates the
@@ -211,8 +217,8 @@ production source file — and it is enumerated too.** A signal match is a RANKI
 gate: matching nothing no longer means a file is absent from the sweep, it means nobody has looked at
 it yet.
 
-**`verify` reports two fractions and no verdict word.** `coverage.repo` is production source files
-read over the total; `coverage.plan` is items dispositioned over items raised. They are different
+**`verify` reports two fractions and no verdict word.** `attested.repo` is production source files
+read over the total; `attested.plan` is items dispositioned over items raised. They are different
 numbers, and the gap between them is the point. Exit 0 means the accounting is settled and 3 means
 items are still open — bookkeeping only, the way a test runner reports outstanding failures. **Carry
 BOTH fractions into the report banner**, not one of them and not a word.
@@ -231,9 +237,21 @@ corroborates it. Attestation is still worth requiring, because it makes an omiss
 made rather than a gap nobody owns. Do not let the gate's exit code stand in for the reading.
 
 **If the domain vocabulary misses your repo, extend it.** `enumerate_h_worklist` is path-based and
-therefore domain-bound: add `reason: regex` lines to `.slop-h-signals` in the target repo and re-plan.
+therefore domain-bound: add the word to the lexicon's `h-signals` block and reinstall the skill, or add `reason: regex` lines to `.slop-h-signals` in the target repo, then re-plan.
 An empty worklist is a hard stop, never a clean result — `ghola` enumerated zero H-paths as an HTTP
 client because the vocabulary had no network terms, and a short worklist reads as a clean repo.
+
+**Write the discharge yourself, from the plan you have already read.** A discharge-skeleton command
+briefly existed to emit a skeleton for you to edit; it was removed after measurement, because you
+are granted `Write` and not `Edit`, so you had to read the skeleton and emit the whole file back —
+6,020 bytes in plus 6,020 out against 3,778 to write it directly. It cost 3.2× what it saved, and
+one `jq` filter reproduced its output byte-for-byte. It also pre-filled `families_not_run` from the
+plan, which quietly satisfied the acknowledgement `enumerate` exists to demand.
+
+Take the same care by hand that the skeleton was meant to enforce: bind `sha` to the plan's sha
+exactly, carry EVERY unseeded family the plan names, and give every candidate a disposition —
+cleared, refuted or filed. A candidate omitted is not a candidate cleared, and `enumerate` counts
+it as neither.
 
 **Pass `--since <ref>` and read the unmatched-change list first.** Extending the vocabulary fixes an
 instance and never the class: the next unenumerated subsystem is exactly as silent, and nothing checks
@@ -447,7 +465,7 @@ enumeration that fails the build on an unclassified sibling, a derived number in
 
 ```
 SLOP SWEEP — <repo> @ <sha>
-Skill:         <version>                (slop-ferret doctor)
+Skill:         <version>                (ferret doctor)
 Lexicon:       <version>              Families ref: read | NOT READ
 Tier:          1 | 1-2 | 1-3
 Scope:         N files (M non-test source; excluded: <vendored/generated>)
@@ -457,7 +475,7 @@ Findings:      <n> VERIFIED  (<b> blocking · <f> fix-or-file · <n> note)
 Rate:          <severity-weighted, VERIFIED only> per 1,000 non-test source  [denominator: M]
 Checked-clean: <class — method used>
 Near-misses:   <candidate — what refuted it>
-H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (slop-ferret verify)
+H-coverage:    <r>/<R> required · <d>/<D> deferred attested   (ferret enumerate)
 Blind spots:   <n> changed files no H signal reached (<w> waived)  [baseline: <ref> | n/a]
 Coverage:      repo <r>/<R> source files read (<p>%) · plan <d>/<D> dispositioned
                <w> waived (counted as unread) · <u> unclassified
@@ -477,7 +495,7 @@ unvalidated-language one**, and never let a structural zero enter a cross-repo t
 **Name the tell if it applies.** A sweep reporting SUSPECTED findings with **zero VERIFIED** has verified
 nothing — say that on the face of the report rather than letting a `Rate: 0.0` read as a clean result.
 Likewise a settled accounting over a tier that skipped families is settled *for that tier*, and must say
-which. **A high `coverage.plan` beside a low `coverage.repo` means the enumeration was narrow, not that
+which. **A high `attested.plan` beside a low `attested.repo` means the enumeration was narrow, not that
 the repo is clean** — say that in words when the two disagree, because a reader who sees one full
 fraction will generalise from it.
 
@@ -491,12 +509,19 @@ The block above is the text half. **The report is the other half, and it is Step
 
 ## Step 5 — build the report (`/slop-ferret:report`)
 
-**Run `/slop-ferret:report`. A sweep is not finished without it.** The text verdict block is for the
+**Run `ferret report <input.json> <out.html>`.** The layout is not yours to write: ordering,
+tables, denominators, rate suppression and escaping are deterministic transforms, and doing them by
+hand cost two defects in a single report on 2026-08-01 — a malformed tag and a junk CSS value,
+caught only by grepping the output afterwards. You supply the JSON: which findings exist, their
+severity and status, the claim, what refuted the near-misses, the prose. The binary renders it the
+same way every time.
+
+**A sweep is not finished without it.** The text verdict block is for the
 record; the report is what a maintainer actually reads, and it is the only artifact that shows coverage,
 calibration and near-misses together.
 
-It must carry, in this order: **both coverage fractions in the banner** — `coverage.repo` and
-`coverage.plan`, each with its denominator, and never one without the other; **what was and was not covered** before
+It must carry, in this order: **both coverage fractions in the banner** — `attested.repo` and
+`attested.plan`, each with its denominator, and never one without the other; **what was and was not covered** before
 any result; findings **severity-first, never volume-first** (count runs inverse to severity — the largest
 class in the first campaign was 7,022 occurrences and cosmetic); VERIFIED and SUSPECTED **visually**
 distinct rather than captioned; every rate beside its denominator, with the rate suppressed below ~100
@@ -538,7 +563,7 @@ refutation was sought.
 
 New or amended classes → **the lexicon** in the `slop-ferret` repo (`skill/references/ai-slop-lexicon.md`),
 with all three fields and provenance, `status: draft` if new. Edit it in the repo and reinstall —
-editing the deployed copy is the mistake `slop-ferret doctor` exists to catch, and it will tell you so.
+editing the deployed copy is the mistake `ferret doctor` exists to catch, and it will tell you so.
 Counts, denominator, SHA, tier, lexicon version, checked-clean results, near-misses **and where the
 report file lives** → the target's sweep record. Never counts in the lexicon; never universal classes on
 a repo page.

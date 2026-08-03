@@ -14,13 +14,13 @@
 // denied. A distribution defect presenting as a safety one, and hand-installation produced it:
 // someone linked one of the two entries, once, and nothing ever checked for the other.
 //
-// The skill is EMBEDDED in the binary rather than read from a checkout, which is what makes the
-// upgrade path a single line:
+// NO PROSE IS COMPILED INTO THE BINARY. `install` acquires the skill — from the repository at the
+// tag matching this binary's version, from an explicit `--ref`, or from a `--from` checkout. That
+// makes the two release cadences structural rather than conventional: a binary that cannot carry
+// prose cannot re-couple them by accident.
 //
-//	go install github.com/robot-accomplice/slop-ferret@latest && slop-ferret install
-//
-// Direction of truth: edit in the repo, build, install. `slop-ferret doctor` catches the case where the
-// hand edited the deployed copy instead — which is the common mistake, not a hypothetical.
+// Direction of truth: edit in the repo, install. `ferret doctor` catches the case where the hand
+// edited the deployed copy instead — which is the common mistake, not a hypothetical.
 package install
 
 import (
@@ -36,28 +36,15 @@ import (
 	"strings"
 )
 
-// Embedded is the skill tree compiled into the binary, injected by main. It lives at the repo
-// root rather than beside this package so the thing a human edits is the obvious top-level
-// `skill/` directory; go:embed can only reach inside its own package dir, so main owns the
-// directive and hands the filesystem down.
-//
-// It is the BOOTSTRAP FLOOR, not the only source. See source.go: skill prose changes far more
-// often than this code does, so binding the two to one release cadence meant a lexicon edit
-// needed a binary rebuild to reach a sweep.
-var Embedded fs.FS
-
-// EmbeddedSource wraps the compiled-in tree.
-func EmbeddedSource(binVersion string) Source {
-	return Source{FS: Embedded, Desc: "embedded (binary " + binVersion + ")"}
-}
-
 const (
 	embedRoot    = "skill"
 	manifestName = ".slop-install.json"
 )
 
-// Both entries, always, together. Installing one and not the other IS the original defect, so
-// they are one table and there is no code path that writes a subset.
+// Both entries, always, together. Installing one and not the other IS the original defect, and
+// `linkAll` enforces it: every entry is created before any content is written, in sorted order,
+// and the failure of any one undoes the rest. See the comment at its call site for the two shapes
+// that defeated the previous instance-shaped guard.
 var commands = map[string]string{
 	"slop-ferret.md":        "SKILL.md",
 	"slop-ferret/report.md": "commands/slop-ferret-report.md",
@@ -88,8 +75,13 @@ func hashBytes(b []byte) string {
 	return hex.EncodeToString(s[:])[:16]
 }
 
-// srcFiles lists a source's skill tree, relative to embedRoot.
+// srcFiles lists a source's skill tree, relative to embedRoot. A zero Source has no tree, which is
+// a legitimate state: `doctor` runs with no source when nothing can be reached, and still has to
+// report what is deployed.
 func srcFiles(src Source) ([]string, error) {
+	if src.FS == nil {
+		return nil, nil
+	}
 	var out []string
 	err := fs.WalkDir(src.FS, embedRoot, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -120,7 +112,7 @@ func readManifest(p paths) manifest {
 	return m
 }
 
-// state of one deployed file relative to the embedded copy.
+// state of one deployed file relative to the source being installed from.
 type state int
 
 const (
@@ -135,6 +127,9 @@ const (
 // stLocal is the one that blocks. It means somebody edited the deployed copy, which is
 // recoverable information — so it is reported rather than resolved. This tool does not merge,
 // and guessing which side was intended is exactly the judgement a program should not make alone.
+// classify compares a source against the deployed copy. With no source it returns nothing to
+// compare -- not an error: "I could not reach a source" and "the deployment is broken" are
+// different findings and must not be conflated.
 func classify(p paths, src Source) (map[string]state, error) {
 	files, err := srcFiles(src)
 	if err != nil {
@@ -171,11 +166,25 @@ func linkTargets(p paths) map[string]string {
 	return out
 }
 
-func relink(link, target string) error {
+// relink points a command entry at the deployed skill.
+//
+// It replaces a SYMLINK freely — that is ours, and repointing it is the whole job. It refuses to
+// replace a REGULAR FILE unless forced: that is somebody's own hand-written command, and deleting
+// it is data loss with no warning.
+//
+// Found by sweeping this repo with its own method. `Install` went to real lengths to refuse
+// clobbering a hand-edited file in the skill tree and gave the command entries — which live outside
+// that tree — no protection at all. A guard applied where the author was looking rather than to the
+// class is the lexicon's `Sited guard`, and this was one.
+func relink(link, target string, force bool) error {
 	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
 		return err
 	}
-	if _, err := os.Lstat(link); err == nil {
+	if fi, err := os.Lstat(link); err == nil {
+		if fi.Mode()&os.ModeSymlink == 0 && !force {
+			return fmt.Errorf("%s exists and is not a symlink this installer created — refusing "+
+				"to delete it. Move it aside, or re-run with --force to overwrite it", link)
+		}
 		if err := os.Remove(link); err != nil {
 			return err
 		}
@@ -191,12 +200,12 @@ func slashCommand(name string) string {
 func Install(w io.Writer, src Source, force bool) int {
 	p, err := newPaths()
 	if err != nil {
-		fmt.Fprintf(w, "slop-ferret: %v\n", err)
+		fmt.Fprintf(w, "ferret: %v\n", err)
 		return 2
 	}
 	st, err := classify(p, src)
 	if err != nil {
-		fmt.Fprintf(w, "slop-ferret: %v\n", err)
+		fmt.Fprintf(w, "ferret: %v\n", err)
 		return 2
 	}
 
@@ -209,7 +218,7 @@ func Install(w io.Writer, src Source, force bool) int {
 	sort.Strings(local)
 
 	if len(local) > 0 && !force {
-		fmt.Fprintf(w, "slop-ferret install: REFUSING — these deployed files differ from the embedded "+
+		fmt.Fprintf(w, "ferret install: REFUSING — these deployed files differ from the source "+
 			"copy and were not written by this installer, so they were edited in place:\n\n")
 		for _, rel := range local {
 			fmt.Fprintf(w, "  %s\n", rel)
@@ -221,22 +230,50 @@ func Install(w io.Writer, src Source, force bool) int {
 		return 3
 	}
 
+	// PRE-FLIGHT EVERY PREDICTABLE FAILURE BEFORE THE FIRST WRITE.
+	//
+	// Content was written first, links second, manifest third. A user who owned
+	// ~/.claude/commands/slop-ferret.md got an abort with the tree already deployed and no
+	// manifest — so the NEXT install saw every file as edited-in-place and told them their own
+	// edits were at risk, about files ferret had written itself 200ms earlier. The refusal was
+	// correct and its timing made the tool lie.
+	//
+	// THE LINKS GO FIRST, ALL OF THEM, AND THEY ROLL BACK.
+	//
+	// An earlier fix pre-flighted only `os.Lstat(link)` returning a non-symlink AT the link path.
+	// That is one INSTANCE of the failure, not the class: any other relink failure still landed
+	// after the tree was on disk. Reproduced 20/20 under review — with
+	// ~/.claude/commands/slop-ferret present as a regular FILE, Lstat returns ENOTDIR so the
+	// pre-flight passed, MkdirAll then failed mid-loop, and 14 runs left /slop-ferret linked with
+	// /slop-ferret:report missing while 6 left neither; every run deployed the full tree with no
+	// manifest, so the next install accused the user of editing files ferret had written itself.
+	//
+	// A symlink does not require its target to exist, so the whole link phase can be completed and
+	// verified before any content is written. If any link fails, the ones already made are undone
+	// and nothing else has been touched. That covers the class instead of the one shape a test
+	// happened to pin.
+	if code, err := linkAll(p, force); err != nil {
+		fmt.Fprintf(w, "ferret install: REFUSING — %v\n  Nothing has been written: the command "+
+			"links are created before the skill tree, and the ones already made were undone.\n", err)
+		return code
+	}
+
 	files, _ := srcFiles(src)
 	written := make(map[string]string, len(files))
 	changed := 0
 	for _, rel := range files {
 		b, err := srcBytes(src, rel)
 		if err != nil {
-			fmt.Fprintf(w, "slop-ferret: %v\n", err)
+			fmt.Fprintf(w, "ferret: %v\n", err)
 			return 2
 		}
 		dst := filepath.Join(p.dest, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-			fmt.Fprintf(w, "slop-ferret: %v\n", err)
+			fmt.Fprintf(w, "ferret: %v\n", err)
 			return 2
 		}
 		if err := os.WriteFile(dst, b, 0o644); err != nil {
-			fmt.Fprintf(w, "slop-ferret: %v\n", err)
+			fmt.Fprintf(w, "ferret: %v\n", err)
 			return 2
 		}
 		written[rel] = hashBytes(b)
@@ -245,21 +282,14 @@ func Install(w io.Writer, src Source, force bool) int {
 		}
 	}
 
-	for link, target := range linkTargets(p) {
-		if err := relink(link, target); err != nil {
-			fmt.Fprintf(w, "slop-ferret: linking %s: %v\n", link, err)
-			return 2
-		}
-	}
-
 	mb, _ := json.MarshalIndent(manifest{Version: SkillVersion(src), Source: src.Desc,
 		Files: written}, "", " ")
 	if err := os.WriteFile(filepath.Join(p.dest, manifestName), mb, 0o644); err != nil {
-		fmt.Fprintf(w, "slop-ferret: %v\n", err)
+		fmt.Fprintf(w, "ferret: %v\n", err)
 		return 2
 	}
 
-	fmt.Fprintf(w, "slop-ferret install: skill %s from %s — %d files deployed (%d changed), "+
+	fmt.Fprintf(w, "ferret install: skill %s from %s — %d files deployed (%d changed), "+
 		"%d command entries linked\n", SkillVersion(src), src.Desc, len(written), changed,
 		len(commands))
 	names := make([]string, 0, len(commands))
@@ -277,7 +307,7 @@ func Install(w io.Writer, src Source, force bool) int {
 func Doctor(w io.Writer, src Source, binVersion string) int {
 	p, err := newPaths()
 	if err != nil {
-		fmt.Fprintf(w, "slop-ferret: %v\n", err)
+		fmt.Fprintf(w, "ferret: %v\n", err)
 		return 2
 	}
 	var problems []string
@@ -289,9 +319,22 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 			problems = append(problems,
 				"no install manifest — the deployed skill was not installed by this tool")
 		}
+		// SOURCE-INDEPENDENT CHECKS FIRST. Everything below this used to run through classify(),
+		// which compares against the SOURCE — so with no source reachable it iterated an empty
+		// list, found nothing, and doctor printed "ok". That is the DEFAULT path for a `go
+		// install`ed binary offline, and for everyone right now, since DefaultSource resolves a tag
+		// that does not exist yet. Deleting the lexicon outright and running doctor returned
+		// "ok — deployed copy matches the binary, both commands resolve", while SKILL.md Step 0.1
+		// names doctor as the enforcement of its own stop condition ("a missing file is exactly
+		// what it reports").
+		//
+		// The manifest already records what was installed and its hashes. That is enough to detect
+		// deletion and in-place editing with no source at all.
+		problems = append(problems, deploymentSelfCheck(p)...)
+
 		st, err := classify(p, src)
 		if err != nil {
-			fmt.Fprintf(w, "slop-ferret: %v\n", err)
+			fmt.Fprintf(w, "ferret: %v\n", err)
 			return 2
 		}
 		keys := make([]string, 0, len(st))
@@ -306,7 +349,7 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 					"deployed copy edited in place: %s (your change is NOT in the repo)", rel))
 			case stStale:
 				problems = append(problems, fmt.Sprintf(
-					"out of date: %s (the source is newer — run `slop-ferret update`)", rel))
+					"out of date: %s (the source is newer — run `ferret update`)", rel))
 			case stMissing:
 				problems = append(problems, fmt.Sprintf("missing from the deployment: %s", rel))
 			}
@@ -338,10 +381,14 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 	if from == "" {
 		from = "unrecorded"
 	}
-	// TWO VERSIONS, deliberately. They used to be one number because the skill was compiled in,
-	// and "which skill am I running" was answerable only as "whichever this binary shipped".
-	fmt.Fprintf(w, "slop-ferret doctor: binary %s · skill %s (installed from %s) · available %s\n",
-		binVersion, installed, from, SkillVersion(src))
+	available := "unknown (no source reachable)"
+	if src.FS != nil {
+		available = SkillVersion(src)
+	}
+	// TWO VERSIONS, deliberately. They used to be one number because the skill was compiled in, and
+	// "which skill am I running" was answerable only as "whichever this binary shipped".
+	fmt.Fprintf(w, "ferret doctor: binary %s · skill %s (installed from %s) · available %s\n",
+		binVersion, installed, from, available)
 	if len(problems) == 0 {
 		fmt.Fprintf(w, "  ok — deployed copy matches the binary, both commands resolve\n")
 		return 0
@@ -350,4 +397,83 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 		fmt.Fprintf(w, "  ! %s\n", s)
 	}
 	return 1
+}
+
+// linkAll creates every command entry, or none. Both entries are one table (installing one and not
+// the other IS the original defect), so the failure of any one undoes the rest.
+//
+// Order is SORTED, not map order. The original defect returned on the first error while ranging a
+// map, so which entry survived a half-install depended on Go's randomised iteration — a failure
+// that reproduces differently every run is one nobody can diagnose from a report.
+func linkAll(p paths, force bool) (int, error) {
+	targets := linkTargets(p)
+	links := make([]string, 0, len(targets))
+	for link := range targets {
+		links = append(links, link)
+	}
+	sort.Strings(links)
+
+	var made []string
+	undo := func() {
+		for _, l := range made {
+			// Best-effort: this runs on a path that is already failing, and a failure to undo must
+			// not mask the failure being reported.
+			_ = os.Remove(l)
+		}
+	}
+	for _, link := range links {
+		if err := relink(link, targets[link], force); err != nil {
+			undo()
+			return 3, err
+		}
+		made = append(made, link)
+	}
+	return 0, nil
+}
+
+// lexiconRel is the one deployed file the BINARY depends on to do its job: gate.loadSignals reads
+// its fenced h-signals block. A deployment missing it produces sweeps that enumerate nothing.
+const lexiconRel = "references/ai-slop-lexicon.md"
+
+// deploymentSelfCheck reports what is wrong with the deployed tree WITHOUT consulting a source.
+// "I could not reach a source" and "the deployment is broken" are different findings, and
+// conflating them is what let doctor certify a lexicon-less install as ok.
+func deploymentSelfCheck(p paths) []string {
+	var problems []string
+
+	// The manifest is this tool's own record of what it wrote. Anything in it that is gone, or
+	// whose bytes changed, is a fact about the deployment alone.
+	for rel, want := range readManifest(p).Files {
+		got, err := os.ReadFile(filepath.Join(p.dest, filepath.FromSlash(rel)))
+		if err != nil {
+			problems = append(problems, fmt.Sprintf(
+				"DELETED since install: %s (this tool wrote it; it is no longer there)", rel))
+			continue
+		}
+		if hashBytes(got) != want {
+			problems = append(problems, fmt.Sprintf(
+				"edited in place since install: %s (your change is NOT in the repo)", rel))
+		}
+	}
+
+	// The lexicon is checked for CONTENT, not just presence, because the failure that matters is a
+	// deployed lexicon whose h-signals fence is missing or renamed: `ferret plan` then loads zero
+	// signals. An older lexicon that predates the fence is indistinguishable from no lexicon at
+	// all, and a sweep run against either enumerates nothing while looking like a real one.
+	lex := filepath.Join(p.dest, filepath.FromSlash(lexiconRel))
+	b, err := os.ReadFile(lex)
+	switch {
+	case err != nil:
+		problems = append(problems, fmt.Sprintf(
+			"the lexicon is missing: %s — every sweep from this deployment enumerates an empty "+
+				"worklist, which reports the same as a clean repository", lex))
+	case !strings.Contains(string(b), "```h-signals"):
+		problems = append(problems, fmt.Sprintf(
+			"the lexicon has no ```h-signals block: %s — the H vocabulary loads from that fence, "+
+				"so this deployment produces sweeps with no vocabulary. It is probably older than "+
+				"this binary; run `ferret update`", lex))
+	}
+
+	sort.Strings(problems)
+	return problems
 }

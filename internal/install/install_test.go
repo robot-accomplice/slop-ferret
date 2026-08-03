@@ -17,8 +17,11 @@ func fakeSkill() fstest.MapFS {
 		"skill/SKILL.md":                       {Data: []byte("# skill\n")},
 		"skill/VERSION":                        {Data: []byte(`{"version":"2026-08-01.8"}`)},
 		"skill/commands/slop-ferret-report.md": {Data: []byte("# report\n")},
-		"skill/references/ai-slop-lexicon.md":  {Data: []byte("# lexicon\n")},
-		"skill/references/families.md":         {Data: []byte("# families\n")},
+		// The fence is not decoration: gate.loadSignals reads the H vocabulary from it, and
+		// doctor now reports a deployed lexicon without one, because that deployment produces
+		// sweeps with no vocabulary that read exactly like clean ones.
+		"skill/references/ai-slop-lexicon.md": {Data: []byte("# lexicon\n\n```h-signals\nmoney/value: pay|wallet\n```\n")},
+		"skill/references/families.md":        {Data: []byte("# families\n")},
 	}
 }
 
@@ -190,7 +193,8 @@ func TestANewerSkillInstallsWithoutANewBinary(t *testing.T) {
 	Install(out, src, false)
 	newer := fakeSkill()
 	newer["skill/VERSION"] = &fstest.MapFile{Data: []byte(`{"version":"2026-09-01.1"}`)}
-	newer["skill/references/ai-slop-lexicon.md"] = &fstest.MapFile{Data: []byte("# new class\n")}
+	newer["skill/references/ai-slop-lexicon.md"] = &fstest.MapFile{
+		Data: []byte("# new class\n\n```h-signals\nmoney/value: pay|wallet\n```\n")}
 	next := Source{FS: newer, Desc: "repo@main (deadbeef)"}
 	out.Reset()
 	if c := Install(out, next, false); c != 0 {
@@ -201,8 +205,8 @@ func TestANewerSkillInstallsWithoutANewBinary(t *testing.T) {
 		t.Errorf("install must report the skill version AND its provenance: %s", out)
 	}
 	got, _ := os.ReadFile(filepath.Join(dest(home), "references", "ai-slop-lexicon.md"))
-	if string(got) != "# new class\n" {
-		t.Error("the newer lexicon must reach the deployed copy")
+	if !strings.Contains(string(got), "# new class") {
+		t.Errorf("the newer lexicon must reach the deployed copy: %q", got)
 	}
 	out.Reset()
 	Doctor(out, next, "test-bin")
@@ -230,4 +234,21 @@ func must(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// doctor must describe what is ON DISK even with no source reachable. It once panicked on a nil FS
+// -- "I cannot reach a source" and "the deployment is broken" are different findings and the tool
+// has to be able to report the second without the first.
+func TestDoctorWorksWithNoSourceReachable(t *testing.T) {
+	home, src, out := setup(t)
+	Install(out, src, false)
+	out.Reset()
+	code := Doctor(out, Source{}, "test-bin")
+	if code != 0 {
+		t.Fatalf("doctor with no source = %d, want 0: %s", code, out)
+	}
+	if !strings.Contains(out.String(), "no source reachable") {
+		t.Errorf("must say the source was unreachable rather than imply drift: %s", out)
+	}
+	_ = home
 }
