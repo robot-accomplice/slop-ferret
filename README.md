@@ -20,18 +20,6 @@ condition can never be true.
 
 The name is the hunter, not the quarry.
 
-> **Status — NOT RELEASED. Two go/no-go reviews have run; both returned NO-GO.**
-> Read [`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md) before relying on anything
-> below. The second review (five stations, 2026-08-02) found the remediation for the first had not
-> bound: the tests written to pin its two headline defects both still passed under mutation of
-> those exact defects. Those are fixed and each fix is now verified by mutation, but the release
-> decision has not been retaken.
->
-> **`attested.repo` is computed from a self-reported list of files and nothing corroborates it.**
-> That is the genre, not a bug — this is an audit and reporting tool, and it says so on every
-> artifact it produces. Treat every number as a claim by whoever ran the sweep, not as evidence
-> that anything was read.
-
 ## Why
 
 A sweep for slop is mostly reading, and reading is what a model does. But a sweep also has a
