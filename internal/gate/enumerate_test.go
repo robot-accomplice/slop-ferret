@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -125,5 +126,88 @@ func TestAPlanWithNoContractIsRefused(t *testing.T) {
 			t.Errorf("contract %q was accepted (code=%d): a plan must come from `ferret plan`",
 				contract, code)
 		}
+	}
+}
+
+// pct FLOORS. Rounding let 1999/2000 render as 100.0% — a partial read shown as complete, in the
+// one number a reader scans first. That defect is named in the function's own comment and in the
+// CHANGELOG as fixed, and mechanical mutation showed nothing tested it: floor could be swapped back
+// to round, and every arithmetic operator in the expression could be changed, with the suite green.
+func TestPctFloorsAndNeverReadsAsCompleteWhenItIsNot(t *testing.T) {
+	for _, c := range []struct {
+		done, total int
+		want        float64
+	}{
+		{1999, 2000, 99.9}, // the defect: rounding renders this 100.0
+		{2000, 2000, 100},
+		{1, 3, 33.3},
+		{2, 3, 66.6}, // floors: rounding gives 66.7
+		{1, 1000, 0.1},
+		{0, 25, 0},
+		{17, 25, 68},
+	} {
+		got := pct(c.done, c.total)
+		if got == nil {
+			t.Fatalf("pct(%d,%d) = nil", c.done, c.total)
+		}
+		if *got != c.want {
+			t.Errorf("pct(%d,%d) = %v, want %v", c.done, c.total, *got, c.want)
+		}
+	}
+	// A partial read must NEVER produce 100.
+	for _, c := range [][2]int{{1999, 2000}, {9999, 10000}, {24, 25}} {
+		if v := pct(c[0], c[1]); v != nil && *v >= 100 {
+			t.Errorf("pct(%d,%d) = %v — a partial read rendered as complete is the whole defect",
+				c[0], c[1], *v)
+		}
+	}
+	// A zero denominator has no percentage. nil is not 0%: "nothing to measure" and "measured
+	// nothing" are different claims, and the caller suppresses the figure rather than printing 0.
+	if pct(0, 0) != nil {
+		t.Error("pct(0,0) must be nil, not 0 — there is no fraction to report")
+	}
+}
+
+// `attested.plan` is one of the tool's two headline fractions and its denominator is a sum of three
+// lists. Mutation showed every operator in both expressions could be flipped with the suite green,
+// so the published fraction was unpinned in both numerator and denominator.
+func TestTheAttestedPlanFractionCountsEveryRaisedItemAndEveryOpenOne(t *testing.T) {
+	repo := gitRepo(t, map[string]string{
+		"internal/wallet/pay.go":  "package w\n", // tier-1 signal -> required
+		"internal/client/get.go":  "package c\n", // tier-2 signal
+		"internal/misc/notes.go":  "package m\n", // no signal -> complement
+		"internal/misc/notes2.go": "package m\n", // no signal -> complement
+		"internal/misc/notes3.go": "package m\n", // no signal -> complement
+	})
+	p := planFor(t, repo)
+	raised := len(p.HRequired) + len(p.HDeferred) + len(p.HUnmatched)
+	if raised < 4 {
+		t.Fatalf("fixture raised only %d items; this test cannot measure the fraction", raised)
+	}
+
+	// Disposition exactly one item and nothing else.
+	one := p.HUnmatched[0]
+	res, _, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
+		"sha": p.SHA, "read_paths": []string{one}, "families_not_run": p.UnseededFamilies}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf("1/%d", raised)
+	if res.Attested.Plan != want {
+		t.Errorf("attested.plan = %q, want %q. The denominator is every item the plan RAISED "+
+			"(required + deferred + complement) and the numerator is those dispositioned; a plan "+
+			"fraction that omits a list reports a narrower sweep as a fuller one",
+			res.Attested.Plan, want)
+	}
+
+	// And all of them.
+	all := append([]string{}, p.ProductionFiles...)
+	res2, _, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
+		"sha": p.SHA, "read_paths": all, "families_not_run": p.UnseededFamilies}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Attested.Plan != fmt.Sprintf("%d/%d", raised, raised) {
+		t.Errorf("attested.plan = %q, want everything dispositioned", res2.Attested.Plan)
 	}
 }

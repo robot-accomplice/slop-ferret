@@ -3,6 +3,7 @@ package gate
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -537,5 +538,67 @@ func TestOrphanedRecordsAreReportedForARemotelessRepoToo(t *testing.T) {
 	if err == nil {
 		t.Fatal("a remoteless repo with records on disk listed as empty — indistinguishable from " +
 			"one nobody has ever swept, which is what this listing exists to rule out")
+	}
+}
+
+// The directory a record sits in is derived from the root commits, so a record whose OWN recorded
+// root disagrees did not come from this repository — it was hand-placed, copied, or migrated. The
+// safe reading of a contradiction between the directory and the file is to trust neither. Mutation
+// showed this cross-check was removable with the suite green.
+func TestARecordClaimingADifferentHistoryIsRefused(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	pl := planFor(t, repo)
+	pl.SHA = headSHA(t, repo)
+	path, err := WriteRecord(repo, pl, &Discharge{SHA: pl.SHA}, &Result{Accounting: "complete"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recs, err := ListRecords(repo); err != nil || len(recs) != 1 {
+		t.Fatalf("baseline: %d records, err=%v", len(recs), err)
+	}
+
+	// Rewrite the record in place to claim a different lineage, leaving it in this repo's directory.
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r Record
+	if err := json.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	r.RootCommit = "0000000000000000000000000000000000000000"
+	nb, _ := json.Marshal(r)
+	must(t, os.WriteFile(path, nb, 0o644))
+
+	recs, err := ListRecords(repo)
+	if len(recs) != 0 {
+		t.Errorf("a record claiming another history was reported as this repo's: %+v", recs)
+	}
+	if err == nil || !strings.Contains(err.Error(), "different history") {
+		t.Errorf("the contradiction must be named, not silently dropped: %v", err)
+	}
+}
+
+// familyOf decides whether a checked-clean label can be reconciled against families_not_run. It
+// must recognise the forms the skill actually writes, and must return "" for a bare class name
+// rather than guessing — a wrong guess would refuse an honest record.
+func TestFamilyOfRecognisesTheWrittenFormsAndGuessesAtNothing(t *testing.T) {
+	for in, want := range map[string]string{
+		"H · latent defect":           "H",
+		"A - dead-on-arrival":         "A",
+		"E: single-impl interface":    "E",
+		"D duplicated implementation": "D",
+		"dead-on-arrival":             "", // bare class: not reconcilable, must not be guessed
+		"hallucinated-api":            "",
+		"I · out of range":            "", // only A-H are families
+		"Z · nope":                    "",
+		"":                            "",
+		"H":                           "", // too short to carry a separator
+	} {
+		if got := familyOf(in); got != want {
+			t.Errorf("familyOf(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
