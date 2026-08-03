@@ -78,21 +78,21 @@ func TestNoStaleCommandNamesOrRemovedFeatureClaims(t *testing.T) {
 		}
 		body := string(b)
 
-		for _, m := range cmdRe.FindAllStringSubmatch(body, -1) {
-			verb := m[1]
-			if live[verb] {
-				continue
-			}
-			problems = append(problems, fmt.Sprintf(
-				"%s: %q — cmd/ferret accepts no such command (live: %s)",
-				rel, m[0], strings.Join(sortedKeys(live), " ")))
-		}
-		// Line by line, so a single legitimate mention can be marked without exempting a whole
-		// file. Whole-file exemption is what let the CHANGELOG document a nonexistent command for
-		// two review cycles: the carve-out meant for history sheltered live wrong prose.
+		// BOTH checks are line by line, so a single legitimate mention — a changelog entry
+		// recording a removal, a migration fixture — can be marked without exempting a whole file.
+		// Whole-file exemption is what let the CHANGELOG document a nonexistent command across two
+		// review cycles: the carve-out meant for history sheltered live wrong prose instead.
 		for n, line := range strings.Split(body, "\n") {
 			if strings.Contains(line, allowMarker) {
 				continue
+			}
+			for _, m := range cmdRe.FindAllStringSubmatch(line, -1) {
+				if live[m[1]] {
+					continue
+				}
+				problems = append(problems, fmt.Sprintf(
+					"%s:%d: %q — cmd/ferret accepts no such command (live: %s)",
+					rel, n+1, m[0], strings.Join(sortedKeys(live), " ")))
 			}
 			for bad, why := range retired {
 				if strings.Contains(line, bad) {

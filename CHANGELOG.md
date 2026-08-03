@@ -11,6 +11,41 @@ this project will use [semantic versioning](https://semver.org/) once it has a r
 stations, 2026-08-02) found the remediation for the first had not bound: the tests written to pin
 its two headline defects both still passed under mutation of those exact defects.
 
+Every fix listed below was verified by breaking it and observing the test fail. That is the
+process change, not a claim about care: twice a remediation was reported complete while its
+guards did not bind, both times because the guard was written from the diff rather than from the
+failure mode.
+
+### Changed
+- **`ferret report` takes the plan and the discharge.** `ferret report <plan.json>
+  <discharge.json> <findings.json> <out.html>`. Every coverage figure is derived by the same code
+  `ferret enumerate` runs; the findings file has no field to type one into and is refused if it
+  carries the retired ones. The previous single-file form had never worked at all — the renderer
+  read flat `attested_repo` while `enumerate` emits nested `attested: {repo}`.
+- **`ferret discharge` removed.** <!-- staleprose:allow --> Measured 3.2x worse than hand-writing (12,040 bytes against
+  3,778), because the skill grants `Write` and not `Edit`, and one `jq` filter reproduced its
+  output byte-for-byte.
+- **Records are keyed on root commits, not `origin`.** The origin URL is configuration and is
+  asserted by the audited repo, so the store both lost history across checkouts and accepted
+  records written by any repository claiming another's URL. Records now carry `schema`; one from
+  before this is reported as unreadable rather than rendered with blank figures.
+- **Windows builds are no longer published** — no Windows path in this tool has ever run.
+
+### Fixed
+- `ferret plan` refuses an empty or uncompilable H vocabulary instead of exiting 0 with an empty
+  worklist, which is what an uninstalled skill looked like and read identically to a clean repo.
+- `ferret doctor` checks the deployment without needing a source: it reported `ok` with the
+  lexicon deleted, the default path for a `go install`ed binary offline.
+- `ferret install` creates all command entries before writing anything and rolls back on failure.
+  Three shapes could previously leave the skill deployed with one entry linked and the other
+  missing — which means the skill's `allowed-tools` never apply.
+- Unknown finding severities are refused rather than ranked; one used to sort as the most severe
+  while rendering as the least.
+- `.slop-h-signals` is bounded (500 signals / 256 KiB): it comes from the audited repo and
+  matching is O(files x signals).
+- Plans record `vocab_provenance`, so a sweep run against a half-loaded lexicon is distinguishable
+  after the fact from one over a repo that genuinely matched nothing.
+
 ### Added
 - **Sweep records** — `ferret enumerate … <repo>` writes `~/.slop-ferret/records/<repo>/<sha>.json`;
   `ferret records <repo>` reads them back. Carries checked-clean *with the method used*, and
