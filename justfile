@@ -68,6 +68,34 @@ doctor:
     go run ./cmd/ferret doctor
 
 # Full local CI validation — same gates as GitHub Actions
+# MUTATION TESTING. Not in `ci` -- the gate package alone is ~220 mutants at ~10s each, so a full
+# run is tens of minutes. Run it before a release, and after any change to a guard.
+#
+# WHY IT EXISTS. Three review rounds found that guards written to close the previous round did not
+# bind: the tests passed under mutation of the exact defects they were written to pin. Each time the
+# author had "verified by mutation" -- by choosing ONE mutation per fix, which is a list, and a
+# hand-written list of what might break is the thing that failed all three times. An independent
+# audit ran 62 mutations against the same tree and 21 survived.
+#
+# So the mutation set is DERIVED rather than chosen, for the same reason the stale-prose gate parses
+# the dispatch and the magma field set comes from reflection.
+#
+# Triage the survivors: some are equivalent mutants (a counter used only in an `== 0` test) and some
+# are display-only. Record which, rather than chasing the number -- an efficacy figure nobody has
+# triaged is exactly the kind of number this project exists to distrust.
+
+# Mutation-test a package: break the code and check a test notices. Slow; run before a release.
+mutate PKG='./...':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    command -v gremlins >/dev/null || {
+      echo "gremlins is not on PATH: go install github.com/go-gremlins/gremlins/cmd/gremlins@latest" >&2
+      exit 1
+    }
+    # The default timeout is derived from a baseline run and is too tight here: the gate package
+    # shells out to git and magma, so an honest mutant looks like a hang.
+    gremlins unleash --timeout-coefficient 20 {{PKG}}
+
 # Fail early and by name, rather than as an unexplained test failure three minutes in.
 check-deps:
     #!/usr/bin/env bash
