@@ -10,7 +10,6 @@
 [![CI](https://github.com/robot-accomplice/slop-ferret/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-accomplice/slop-ferret/actions/workflows/ci.yml)
 [![Release](https://github.com/robot-accomplice/slop-ferret/actions/workflows/release.yml/badge.svg)](https://github.com/robot-accomplice/slop-ferret/actions/workflows/release.yml)
 [![coverage ≥80%](https://img.shields.io/badge/coverage-%E2%89%A580%25%20enforced-brightgreen)](.github/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/robot-accomplice/slop-ferret)](https://goreportcard.com/report/github.com/robot-accomplice/slop-ferret)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
