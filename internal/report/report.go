@@ -205,7 +205,12 @@ func FromSweep(pl *gate.Plan, dis *gate.Discharge, res *gate.Result, a Authored)
 		NearMisses:     dis.NearMisses,
 		MapLimitations: pl.MapLimitations,
 	}
+	// Same rule as the record, from the same function: a class recorded clean with an
+	// uncheckable method is not a clean anybody can verify, and the page is where a human sees it.
 	for _, c := range dis.CheckedClean {
+		if strings.TrimSpace(c.Class) == "" || !gate.CheckableMethod(c.Method) {
+			continue
+		}
 		in.CheckedClean = append(in.CheckedClean, struct {
 			Class  string `json:"class"`
 			Method string `json:"method"`

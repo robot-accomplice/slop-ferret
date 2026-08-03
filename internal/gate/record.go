@@ -238,15 +238,41 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 
 	// A class recorded clean WITHOUT a method is not checkable, and an unchecked clean is how a
 	// later sweep skips ground nobody covered. Drop them rather than persist an unfalsifiable claim.
+	// A CLASS CANNOT BE BOTH CHECKED CLEAN AND NOT RUN. A record carrying both is not merely
+	// untidy: SKILL.md Step 0.2 tells the next sweep to trust `checked_clean` and not re-spend
+	// budget there, so the contradiction converts a family nobody ran into a family nobody will
+	// ever run. Refuse rather than record, because there is no safe reading of it.
+	notRun := map[string]bool{}
+	for _, f := range dis.FamiliesNotRun {
+		notRun[strings.ToUpper(strings.TrimSpace(f))] = true
+	}
+	for _, c := range dis.CheckedClean {
+		fam := strings.ToUpper(strings.TrimSpace(familyOf(c.Class)))
+		if fam != "" && notRun[fam] {
+			return "", fmt.Errorf("the discharge lists family %s in `families_not_run` AND records "+
+				"%q as checked clean. A family that did not run cannot have been checked; the next "+
+				"sweep is told to skip whatever appears here, so recording both would retire "+
+				"ground nobody covered", fam, c.Class)
+		}
+	}
+
 	clean := make([]CheckedClean, 0, len(dis.CheckedClean))
 	for _, c := range dis.CheckedClean {
-		if strings.TrimSpace(c.Class) != "" && strings.TrimSpace(c.Method) != "" {
+		if strings.TrimSpace(c.Class) != "" && CheckableMethod(c.Method) {
 			clean = append(clean, c)
 		}
 	}
 
+	// RootCommit is stamped ONLY when it is the thing the key was derived from. A shallow clone's
+	// "root" is a graft boundary that moves with --depth, and repoIdentity already refuses it as a
+	// key -- stamping it here anyway made ListRecords' cross-check reject the repository's own
+	// records as "a different history" after any `git fetch --deepen`. The guard added to dodge the
+	// moving boundary was defeated by a field that did not get the same treatment.
 	_, method, _ := repoIdentity(repo)
-	roots, _ := gitLines(repo, "rev-list", "--max-parents=0", "--reverse", "HEAD")
+	var roots []string
+	if method == "root-commit" {
+		roots, _ = gitLines(repo, "rev-list", "--max-parents=0", "--reverse", "HEAD")
+	}
 	rec := Record{
 		Schema: RecordSchema,
 		Origin: originURL(repo), RootCommit: strings.Join(roots, ","), IdentityMethod: method,
@@ -297,8 +323,20 @@ func ListRecords(repo string) ([]Record, error) {
 	// binary sit in a directory nothing looks in any more. Returning nothing while five records
 	// exist on disk is the same "absence rendered as a value" defect this store was just fixed
 	// for -- so the old location is checked and REPORTED, exactly once, rather than left silent.
+	// Both shapes the previous binary could have written: origin-derived for a repo with a remote,
+	// and `path-<sha256(abs)[:8]>` for one without. The first version of this check covered only
+	// the first, so a REMOTELESS repo with records on disk still listed as empty with no error --
+	// the exact defect the check was added to close, still live in it.
+	legacyKeys := []string{}
 	if o := originURL(repo); o != "" {
-		if old := filepath.Join(root, filepath.FromSlash(safeKey(o))); old != dir {
+		legacyKeys = append(legacyKeys, safeKey(o))
+	}
+	if abs, err := filepath.Abs(repo); err == nil {
+		h := sha256.Sum256([]byte(abs))
+		legacyKeys = append(legacyKeys, "path-"+hex.EncodeToString(h[:])[:8])
+	}
+	for _, lk := range legacyKeys {
+		if old := filepath.Join(root, filepath.FromSlash(lk)); old != dir {
 			if ents, err := os.ReadDir(old); err == nil && len(ents) > 0 {
 				legacy = append(legacy, fmt.Errorf("%d record(s) from an older binary are at %s, "+
 					"keyed on the origin URL. The key is derived from the repository's root "+
@@ -341,4 +379,39 @@ func ListRecords(repo string) ([]Record, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Date > out[j].Date })
 	return out, errors.Join(legacy...)
+}
+
+// nonMethods are strings that occupy the method field without being a method. A reader cannot check
+// "-", and the whole value of a recorded clean is that the NEXT sweep can check it and skip work.
+var nonMethods = map[string]bool{"-": true, "--": true, "n/a": true, "na": true, "none": true,
+	"tbd": true, "todo": true, "?": true, "x": true}
+
+// CheckableMethod reports whether a checked-clean method is falsifiable text.
+//
+// It is exported and lives here so that the RECORD and the REPORT apply one rule. They did not:
+// WriteRecord dropped blank methods while the renderer copied them verbatim, so the page a human
+// reads asserted classes clean with an empty "Method used" cell, under a heading whose premise is
+// that the method is not optional. The durable artifact was stricter than the visible one, which is
+// the wrong way round — a human can act on what they see.
+func CheckableMethod(s string) bool {
+	t := strings.ToLower(strings.TrimSpace(s))
+	return t != "" && !nonMethods[t]
+}
+
+// familyOf extracts the family letter from a checked-clean class label. The skill writes them as
+// "H · latent defect" or "A - dead-on-arrival", and it also writes bare class names like
+// "dead-on-arrival"; only the first form can be reconciled against families_not_run, so the bare
+// form returns "" and is left alone rather than guessed at.
+func familyOf(class string) string {
+	t := strings.TrimSpace(class)
+	if len(t) < 2 {
+		return ""
+	}
+	if c := t[0]; c >= 'A' && c <= 'H' {
+		switch t[1] {
+		case ' ', '\t', ':', '-', 0xC2: // 0xC2 leads the UTF-8 for '·'
+			return string(c)
+		}
+	}
+	return ""
 }

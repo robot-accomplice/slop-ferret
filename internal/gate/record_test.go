@@ -1,7 +1,10 @@
 package gate
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -426,5 +429,113 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A CLASS CANNOT BE BOTH CHECKED CLEAN AND NOT RUN. Three reviews found records asserting both —
+// `families_not_run: ["A"..."H"]` beside `checked_clean: dead-on-arrival`, which is family A. It is
+// not untidiness: SKILL.md Step 0.2 tells the next sweep to trust `checked_clean` and skip that
+// ground, so the contradiction retires a family nobody ran.
+func TestARecordCannotClaimAFamilyBothCleanAndNotRun(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	t.Setenv("HOME", t.TempDir())
+	pl := planFor(t, repo)
+	pl.SHA = headSHA(t, repo)
+
+	dis := &Discharge{SHA: pl.SHA, FamiliesNotRun: []string{"D", "E"},
+		CheckedClean: []CheckedClean{{Class: "E · single-impl interface", Method: "read them all"}}}
+	_, err := WriteRecord(repo, pl, dis, &Result{Accounting: "complete"})
+	if err == nil {
+		t.Fatal("a family listed not-run and recorded clean must be refused, not persisted")
+	}
+	if !strings.Contains(err.Error(), "families_not_run") {
+		t.Errorf("the refusal must name the contradiction: %v", err)
+	}
+
+	// The honest shape still records.
+	ok := &Discharge{SHA: pl.SHA, FamiliesNotRun: []string{"D"},
+		CheckedClean: []CheckedClean{{Class: "E · single-impl interface", Method: "read them all"}}}
+	if _, err := WriteRecord(repo, pl, ok, &Result{Accounting: "complete"}); err != nil {
+		t.Fatalf("a non-contradictory record must still write: %v", err)
+	}
+}
+
+// An uncheckable method is not a method. "-" used to pass the non-empty test and reach the durable
+// record, where the next sweep is told to trust it.
+func TestUncheckableMethodsAreNotRecorded(t *testing.T) {
+	for _, m := range []string{"-", "n/a", "N/A", "none", " TODO ", "?"} {
+		if CheckableMethod(m) {
+			t.Errorf("%q passed as a checked-clean method; a reader cannot check it", m)
+		}
+	}
+	for _, m := range []string{"build+vet on 4 GOOS/GOARCH", "read every tier-1 path"} {
+		if !CheckableMethod(m) {
+			t.Errorf("%q is a real method and was rejected", m)
+		}
+	}
+}
+
+// The shallow-clone guard was defeated by a field that did not get it. repoIdentity correctly
+// refuses a graft boundary as a KEY, but WriteRecord stamped RootCommit from that same moving
+// boundary — so after `git fetch --deepen` the cross-check in ListRecords rejected the
+// repository's own records as "a different history".
+func TestAShallowCloneDoesNotStampAMovingRootCommit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	origin := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	run(t, origin, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-qm", "second")
+
+	shallow := filepath.Join(t.TempDir(), "shallow")
+	if out, err := exec.Command("git", "clone", "-q", "--depth", "1",
+		"file://"+origin, shallow).CombinedOutput(); err != nil {
+		t.Skipf("cannot make a shallow clone here: %v %s", err, out)
+	}
+	key, method, err := repoIdentity(shallow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if method != "absolute-path" || !strings.HasPrefix(key, "path-") {
+		t.Fatalf("a shallow clone must not key on a graft boundary: key=%q method=%q", key, method)
+	}
+
+	pl := planFor(t, shallow)
+	pl.SHA = headSHA(t, shallow)
+	if _, err := WriteRecord(shallow, pl, &Discharge{SHA: pl.SHA},
+		&Result{Accounting: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	recs, err := ListRecords(shallow)
+	if err != nil {
+		t.Fatalf("a shallow clone must be able to read back its own record: %v", err)
+	}
+	if len(recs) != 1 {
+		t.Fatalf("got %d records, want 1", len(recs))
+	}
+	if recs[0].RootCommit != "" {
+		t.Errorf("RootCommit = %q — stamping the graft boundary is what orphaned these records "+
+			"on the next `git fetch --deepen`", recs[0].RootCommit)
+	}
+}
+
+// The orphan report covered only origin-keyed records, so a REMOTELESS repo with records on disk
+// still listed as empty with no error — the defect that check was added to close, live inside it.
+func TestOrphanedRecordsAreReportedForARemotelessRepoToo(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := gitRepo(t, map[string]string{"a.go": "package a\n"}) // no origin
+
+	abs, _ := filepath.Abs(repo)
+	h := sha256.Sum256([]byte(abs))
+	old := filepath.Join(home, ".slop-ferret", "records", "path-"+hex.EncodeToString(h[:])[:8])
+	must(t, os.MkdirAll(old, 0o755))
+	must(t, os.WriteFile(filepath.Join(old, "abc1234.json"), []byte(`{"sha":"abc1234"}`), 0o644))
+
+	recs, err := ListRecords(repo)
+	if len(recs) != 0 {
+		t.Fatalf("an old-key record must not read as current: %+v", recs)
+	}
+	if err == nil {
+		t.Fatal("a remoteless repo with records on disk listed as empty — indistinguishable from " +
+			"one nobody has ever swept, which is what this listing exists to rule out")
 	}
 }

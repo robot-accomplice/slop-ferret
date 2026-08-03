@@ -171,9 +171,25 @@ func Enumerate(planPath, dischargePath string) (*Result, int, error) {
 	// unknown MAP contract with exit 4. The asymmetry meant any future field rename would degrade
 	// to zeros and SETTLE rather than refuse — guarding the input we did not design and not the one
 	// we did.
-	if pl.Contract != "" && pl.Contract != planContract {
-		return nil, ExitRefused, die(ExitRefused, "plan contract %q is not %q — this plan was "+
-			"written by a different version of ferret; re-run `ferret plan`", pl.Contract, planContract)
+	// The contract is MANDATORY, not opt-in. It used to read `pl.Contract != "" && ...`, so a plan
+	// that simply omitted the field was accepted — which is the shape a hand-written plan takes,
+	// and hand-written plans are how a sweep that never ran produces a settled record.
+	if pl.Contract != planContract {
+		return nil, ExitRefused, die(ExitRefused, "plan contract %q is not %q — a plan must come "+
+			"from `ferret plan`, which stamps this. An absent contract used to be accepted, which "+
+			"made a hand-written plan indistinguishable from a real one", pl.Contract, planContract)
+	}
+
+	// A DENOMINATOR OF ZERO IS NOT A CLEAN SWEEP. ABORT I condition 4 required this verbatim
+	// ("`0/0` cannot settle") and it was never implemented: a plan with an empty `production_files`
+	// reported attested.repo "0/0", accounting complete, exit 0, empty remaining, and wrote a
+	// durable record. There is no repository that describes — it is an instrument reading of
+	// nothing, and this tool exists to stop nothing from reading as clean.
+	if pl.ProductionTotal == 0 || len(pl.ProductionFiles) == 0 {
+		return nil, ExitRefused, die(ExitRefused, "the plan names no production files, so there is "+
+			"no denominator and nothing to be complete ABOUT. `0/0` is not coverage. If the "+
+			"repository really has no source files this tool has nothing to say about it; if it "+
+			"has some, the plan is wrong — re-run `ferret plan`")
 	}
 
 	var remaining []string
