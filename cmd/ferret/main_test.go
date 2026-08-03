@@ -378,6 +378,18 @@ func TestReportDerivesItsFiguresFromTheRealPlanAndDischarge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("magma is not on PATH; this seam must be exercised end to end: %v", err)
 	}
+	// Self-provision the skill so `ferret plan` has a vocabulary. Without this the test reads the
+	// skill deployed in the developer's ambient ~/.claude — present locally, absent on a fresh CI
+	// runner, where `plan` then refuses with an empty H vocabulary (exit 4). Every other e2e here
+	// installs into a temp HOME first; this one did not, and only first-push CI surfaced it.
+	t.Setenv("HOME", t.TempDir())
+	rootB, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Fatalf("locate repo root: %v", err)
+	}
+	if code, _, errs := runCLI(t, "install", "--from", strings.TrimSpace(string(rootB))); code != gate.ExitOK {
+		t.Fatalf("install skill so plan has a vocabulary: code=%d %s", code, errs)
+	}
 	repo := t.TempDir()
 	for rel, body := range map[string]string{
 		"go.mod":                 "module example.com/e2e\n\ngo 1.26\n",
