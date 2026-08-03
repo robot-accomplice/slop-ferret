@@ -89,18 +89,14 @@ jobs:
           # Restore windows/amd64 when a Windows job runs the suite and `install` has a tested path.
           for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${t%/*}"; arch="${t#*/}"
-            bin="ferret"; [ "$os" = "windows" ] && bin="ferret.exe"
+            bin="ferret"
             echo "==> ${os}/${arch}"
             GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/${bin}" ./cmd/ferret
             # Assets are named after the PROJECT, not the binary inside them. The repo is slop-ferret and
             # the binary is ferret; downstream release-sync keys on the project name, which is the
             # house convention across the sibling projects (magma_<tag>_<os>_<arch>).
             base="slop-ferret_${TAG}_${os}_${arch}"
-            if [ "$os" = "windows" ]; then
-              (cd dist && zip -q "${base}.zip" "$bin" && rm "$bin")
-            else
-              (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin")
-            fi
+            (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin")
           done
           # The skill ships as its own artifact: a checksummed, versioned acquisition path for
           # anyone who wants one. SUPPORTED, not required — `ferret install` resolves the tag from

@@ -121,14 +121,15 @@ release-dry version="v0.0.0-dev":
     #!/usr/bin/env bash
     set -euo pipefail
     rm -rf dist && mkdir -p dist
-    for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+    # Mirror release.yml exactly: no windows (install uses os.Symlink, and no windows path has ever
+    # run), tar.gz archives only. TestReleaseDryMirrorsReleaseYmlPlatforms keeps the two in step.
+    for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
         os="${t%/*}"; arch="${t#*/}"
-        bin="ferret"; [ "$os" = "windows" ] && bin="ferret.exe"
+        bin="ferret"
         echo "==> ${os}/${arch}"
         CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "dist/${bin}" ./cmd/ferret
         base="slop-ferret_{{ version }}_${os}_${arch}"
-        if [ "$os" = "windows" ]; then (cd dist && zip -q "${base}.zip" "$bin" && rm "$bin")
-        else (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin"); fi
+        (cd dist && tar -czf "${base}.tar.gz" "$bin" && rm "$bin")
     done
     (cd dist && shasum -a 256 ./* > checksums.txt)
     ls -la dist
