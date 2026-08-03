@@ -111,6 +111,18 @@ func TestFetchFailsLoudOnAnUnknownRef(t *testing.T) {
 	}
 }
 
+// resolveRef must reject a too-short response body rather than treat it as a commit. The forge can
+// return an error page or a truncated body with HTTP 200, and a 3-char "sha" would otherwise be fed
+// to the tarball URL and fail later, further from the cause. This response validation had no
+// coverage (#22); the local-server seam makes it reachable. Break it: drop the `len(sha) < 7` guard
+// in resolveRef and this goes red.
+func TestFetchRejectsAShortShaResponse(t *testing.T) {
+	serve(t, "abc", map[string]string{"skill/SKILL.md": "# s\n"}) // a 3-char body, not a sha
+	if _, _, err := Fetch("main"); err == nil || !strings.Contains(err.Error(), "unexpected response") {
+		t.Fatalf("want a short-response rejection, got %v", err)
+	}
+}
+
 // An archive with no skill/ tree must fail rather than install nothing and report success.
 func TestFetchRefusesAnArchiveWithNoSkillTree(t *testing.T) {
 	serve(t, "abc0000000000000", map[string]string{"main.go": "package main\n"})

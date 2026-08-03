@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,20 @@ import (
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
 	"github.com/robot-accomplice/slop-ferret/internal/report"
 )
+
+// failingForge points the source resolution at a server that 404s, so DefaultSource's ref
+// resolution fails deterministically — the "no release to resolve" path — regardless of whether a
+// real tag exists on the live forge. Before this, TestBareInstall* and TestInstallThenDoctor
+// resolved the live repo and inverted the moment v0.1.0 was tagged; the release workflow re-runs the
+// suite AT the tag, so they broke the first publish. Now they are hermetic.
+func failingForge(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "no such ref", http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("SLOP_FERRET_API_BASE", srv.URL+"/")
+}
 
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
@@ -93,6 +109,7 @@ func TestDoctorReportsNotInstalledOnACleanHome(t *testing.T) {
 func TestInstallThenDoctorRoundTrips(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	failingForge(t) // doctor must not report drift against a live-resolved source it happened to reach
 	if code, out, errs := runCLI(t, "install", "--from", fakeCheckout(t)); code != 0 {
 		t.Fatalf("install code=%d out=%s err=%s", code, out, errs)
 	}
@@ -139,13 +156,16 @@ func TestInstallAndUpdateAreSynonyms(t *testing.T) {
 	}
 }
 
-// With no compiled-in copy and no tag to resolve, a bare install must say what to do instead of
+// With no compiled-in copy and no source to resolve, a bare install must say what to do instead of
 // silently falling back to HEAD -- that fallback is the unpinned install the default exists to avoid.
-func TestBareInstallBeforeAnyReleaseNamesTheAlternatives(t *testing.T) {
+// The no-source condition is forced by pointing resolution at a 404 forge, so the test holds whether
+// or not a real release tag exists (it used to depend on v0.1.0 not being tagged yet).
+func TestBareInstallWithNoResolvableSourceNamesTheAlternatives(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	failingForge(t)
 	code, _, errs := runCLI(t, "install")
 	if code == 0 {
-		t.Fatal("with no tag to resolve, a bare install must not silently succeed")
+		t.Fatal("with no source to resolve, a bare install must not silently succeed")
 	}
 	for _, want := range []string{"--from", "--ref"} {
 		if !strings.Contains(errs, want) {

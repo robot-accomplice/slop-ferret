@@ -47,6 +47,19 @@ var (
 	refAPIURL  = "https://api.github.com/repos/robot-accomplice/slop-ferret/commits/"
 )
 
+// forgeBase returns the env override if set, else the compiled default. It is read at CALL time, so
+// a CLI-level test (or a mirror / GitHub Enterprise deployment) can point the fetch at another host
+// without touching the live forge — and, critically, without depending on whether a real tag exists
+// there, which is what made two install tests invert the moment v0.1.0 was pushed. The vars above
+// stay the in-package test seam; this reaches the same seam from an env var and from out-of-package
+// tests.
+func forgeBase(envVar, def string) string {
+	if v := os.Getenv(envVar); v != "" {
+		return v
+	}
+	return def
+}
+
 const (
 	fetchLimit = 32 << 20 // a skill tree is prose; anything near this is wrong
 	// The archive's top-level dir is `<repo>-<sha>`; that is how a ref gets pinned to the
@@ -79,7 +92,7 @@ func Fetch(ref string) (Source, func(), error) {
 	if err != nil {
 		return Source{}, noop, err
 	}
-	resp, err := client.Get(tarballURL + sha)
+	resp, err := client.Get(forgeBase("SLOP_FERRET_TARBALL_BASE", tarballURL) + sha)
 	if err != nil {
 		return Source{}, noop, fmt.Errorf("fetching skill at %q: %w", ref, err)
 	}
@@ -167,7 +180,7 @@ func Fetch(ref string) (Source, func(), error) {
 // resolveRef turns a branch, tag or sha into the commit sha it names right now. Recording the ref
 // alone would make "installed from main" unreproducible the moment main moves.
 func resolveRef(client *http.Client, ref string) (string, error) {
-	req, err := http.NewRequest("GET", refAPIURL+ref, nil)
+	req, err := http.NewRequest("GET", forgeBase("SLOP_FERRET_API_BASE", refAPIURL)+ref, nil)
 	if err != nil {
 		return "", err
 	}

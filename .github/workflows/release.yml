@@ -29,6 +29,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The gate below runs the full suite, and the real-magma integration test fails rather than
+      # skips when magma is absent. ci.yml installs it; this workflow must too, or the tagged commit
+      # fails a gate that passed on the merge.
+      - name: install magma (the real producer the gates exercise)
+        run: go install github.com/robot-accomplice/magma@v0.2.0
+
       - name: Re-run CI gates
         run: |
           unformatted="$(gofmt -l .)"
