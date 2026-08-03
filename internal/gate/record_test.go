@@ -596,6 +596,11 @@ func TestFamilyOfRecognisesTheWrittenFormsAndGuessesAtNothing(t *testing.T) {
 		"Z · nope":                    "",
 		"":                            "",
 		"H":                           "", // too short to carry a separator
+		// The length boundary itself. `A:` is exactly 2 bytes after trimming, so `< 2` admits it
+		// and `<= 2` rejects it — mechanical mutation found that swap surviving, because every
+		// other case here is either 1 byte or comfortably long. A label is trimmed before the
+		// check, so `"A "` would NOT test this: it becomes 1 byte.
+		"A:": "A",
 	} {
 		if got := familyOf(in); got != want {
 			t.Errorf("familyOf(%q) = %q, want %q", in, got, want)

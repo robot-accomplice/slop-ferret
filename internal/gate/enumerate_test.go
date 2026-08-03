@@ -200,6 +200,36 @@ func TestTheAttestedPlanFractionCountsEveryRaisedItemAndEveryOpenOne(t *testing.
 			res.Attested.Plan, want)
 	}
 
+	// AND A FIXTURE ABOVE THE DEFER FLOOR, because the one above cannot see half of this.
+	//
+	// Mechanical mutation caught what a hand-picked mutation could not: with a small worklist
+	// `len(pl.HDeferred)` and `deferredUnattested` are both 0, so flipping the FIRST `+` in either
+	// expression to `-` is an equivalent mutant — 0 subtracts the same as it adds. The test looked
+	// like it pinned the arithmetic and pinned only the terms that happened to be non-zero.
+	big := map[string]string{}
+	for i := 0; i < 40; i++ {
+		big[fmt.Sprintf("internal/wallet/pay%02d.go", i)] = "package x\n"
+	}
+	for i := 0; i < 30; i++ {
+		big[fmt.Sprintf("internal/client/download%02d.go", i)] = "package x\n"
+	}
+	bp := planFor(t, gitRepo(t, big))
+	if len(bp.HDeferred) == 0 {
+		t.Fatalf("fixture deferred nothing (worklist %d, floor %d); the deferred terms stay zero "+
+			"and the arithmetic is untested again", len(bp.HWorklist), hDeferFloor)
+	}
+	bRaised := len(bp.HRequired) + len(bp.HDeferred) + len(bp.HUnmatched)
+	bres, _, err := Enumerate(writeJSON(t, bp), writeJSON(t, map[string]any{
+		"sha": bp.SHA, "read_paths": []string{}, "families_not_run": bp.UnseededFamilies}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bres.Attested.Plan != fmt.Sprintf("0/%d", bRaised) {
+		t.Errorf("attested.plan = %q, want 0/%d with %d required + %d deferred + %d complement, "+
+			"none dispositioned", bres.Attested.Plan, bRaised,
+			len(bp.HRequired), len(bp.HDeferred), len(bp.HUnmatched))
+	}
+
 	// And all of them.
 	all := append([]string{}, p.ProductionFiles...)
 	res2, _, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
