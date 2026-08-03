@@ -34,7 +34,6 @@ and deterministic — two runs over the same input are byte-identical.
 {
   "repo": "<name>",
   "skill_version": "<from ferret doctor>",
-  "lexicon_version": "<from the lexicon's version: line>",
   "families_run": ["A", "B", "H"],
   "findings": [
     {
@@ -55,10 +54,11 @@ and deterministic — two runs over the same input are byte-identical.
 **There is no field for a coverage fraction, and that is deliberate.** `attested.repo`,
 `attested.plan`, the waived count, the denominator, the accounting and families-not-run are all
 **derived by `ferret report`** from the plan and the discharge, using the same code `ferret
-enumerate` runs. The tier, near-misses and checked-clean are **carried from the discharge you
-already wrote** — the optional attested fields the plan's `instructions` describe, not re-typed
-here. Either way none of them belong in `findings.json`, so the page cannot disagree with the
-sweep that produced it.
+enumerate` runs. The **lexicon version is computed too** — `ferret plan` records what it actually
+loaded, so a version you typed could disagree with it, and a half-loaded lexicon would otherwise be
+invisible. The tier, near-misses and checked-clean are **carried from the discharge you already
+wrote** — the optional attested fields the plan's `instructions` describe, not re-typed here.
+None of them belong in `findings.json`, so the page cannot disagree with the sweep that produced it.
 
 A findings file carrying `attested_repo` or `accounting` is **refused, not ignored** — those
 figures used to be model-supplied, and silently dropping them would let an old file render a page

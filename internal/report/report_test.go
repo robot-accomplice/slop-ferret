@@ -165,7 +165,7 @@ func TestAnUnknownStatusIsRefused(t *testing.T) {
 
 // A well-formed findings file must still parse, or the refusals above are just a broken command.
 func TestAWellFormedFindingsFileParses(t *testing.T) {
-	b := []byte(`{"repo":"x","skill_version":"s","lexicon_version":"l","families_run":["H"],
+	b := []byte(`{"repo":"x","skill_version":"s","families_run":["H"],
 	  "findings":[{"title":"t","severity":"blocking","status":"VERIFIED","file":"a.go"}]}`)
 	a, err := ParseAuthored(b)
 	if err != nil {
@@ -206,7 +206,7 @@ func TestFromSweepTakesEveryFigureFromThePlanAndTheEnumeration(t *testing.T) {
 	}
 	// Deliberately hostile: the authored half claims the opposite of everything derivable.
 	a := Authored{
-		Repo: "repo-label", SkillVersion: "sv", LexiconVer: "lv",
+		Repo: "repo-label", SkillVersion: "sv",
 		FamiliesRun: []string{"H"},
 		Findings:    []Finding{{Title: "t", Severity: "note", Status: "VERIFIED", File: "a.go"}},
 	}
@@ -278,5 +278,20 @@ func TestFromSweepAppliesTheSameCheckedCleanFilterAsTheRecord(t *testing.T) {
 		t.Errorf("checked-clean = %v, want only the entry with a falsifiable method. \"-\" and "+
 			"\"n/a\" are not methods a reader can check, and the page is where a human sees them",
 			got)
+	}
+}
+
+// The lexicon label on the page must be what `ferret plan` actually LOADED (plan.VocabProvenance),
+// not what the auditor typed into findings.json. A model-typed version that disagrees with the
+// loaded one is a lie on the artifact a human reads, and a half-loaded lexicon carrying a plausible
+// version string is otherwise invisible. Break it: source LexiconVer from the findings file again
+// and this goes red.
+func TestFromSweepTakesTheLexiconLabelFromThePlan(t *testing.T) {
+	pl := &gate.Plan{SHA: "s", ProductionTotal: 1,
+		VocabProvenance: map[string]string{"lexicon_version": "2026-08-03.7"}}
+	in := FromSweep(pl, &gate.Discharge{}, &gate.Result{}, Authored{})
+	if in.LexiconVer != "2026-08-03.7" {
+		t.Errorf("LexiconVer = %q, want the plan's computed lexicon_version — the page label must be "+
+			"what plan loaded, not what the findings file claimed", in.LexiconVer)
 	}
 }

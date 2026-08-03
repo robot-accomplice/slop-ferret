@@ -78,6 +78,13 @@ type Record struct {
 	UnmatchedSize  int    `json:"unmatched_size"`
 	Accounting     string `json:"accounting"`
 
+	// VocabProvenance is where the H vocabulary came from and how much of it loaded, carried from the
+	// plan. Without it, a sweep over a half-loaded lexicon records byte-identical to one over a repo
+	// that genuinely matched nothing — the failure and the clean result look the same in recorded
+	// state, which is the seam most likely to break (an unversioned markdown file in another tool's
+	// config tree).
+	VocabProvenance map[string]string `json:"vocab_provenance,omitempty"`
+
 	Tier              string         `json:"tier,omitempty"`
 	FamiliesNotRun    []string       `json:"families_not_run,omitempty"`
 	CheckedClean      []CheckedClean `json:"checked_clean,omitempty"`
@@ -280,7 +287,8 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 		AttestedRepo: res.Attested.Repo, AttestedPlan: res.Attested.Plan,
 		Denominator: pl.ProductionTotal, Waived: res.Attested.Waived,
 		WorklistSize: len(pl.HWorklist), UnmatchedSize: len(pl.HUnmatched),
-		Accounting: res.Accounting,
+		Accounting:      res.Accounting,
+		VocabProvenance: pl.VocabProvenance,
 
 		Tier: dis.Tier, FamiliesNotRun: dis.FamiliesNotRun,
 		CheckedClean: clean, NearMisses: dis.NearMisses,

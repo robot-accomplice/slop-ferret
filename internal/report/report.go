@@ -134,7 +134,6 @@ func Render(w io.Writer, in Input) error {
 type Authored struct {
 	Repo         string    `json:"repo"`
 	SkillVersion string    `json:"skill_version"`
-	LexiconVer   string    `json:"lexicon_version"`
 	FamiliesRun  []string  `json:"families_run"`
 	Findings     []Finding `json:"findings"`
 }
@@ -148,9 +147,10 @@ func ParseAuthored(b []byte) (Authored, error) {
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.DisallowUnknownFields()
 	if err := d.Decode(&a); err != nil {
-		return a, fmt.Errorf("%w\n\nCoverage figures are no longer supplied here — they are "+
-			"derived from the plan and the enumeration. This file carries the findings and the "+
-			"provenance labels only: {repo, skill_version, lexicon_version, families_run, findings}",
+		return a, fmt.Errorf("%w\n\nCoverage figures are not supplied here — they are derived from "+
+			"the plan and the enumeration — and the lexicon version is computed by `ferret plan` from "+
+			"what it loaded, not typed. This file carries the findings and the provenance labels only: "+
+			"{repo, skill_version, families_run, findings}",
 			err)
 	}
 	// SEVERITY AND STATUS ARE ENUMS, and both used to fail open toward "looks fine": an
@@ -189,7 +189,10 @@ func severities() []string {
 // path that reaches Render with a typed-in fraction.
 func FromSweep(pl *gate.Plan, dis *gate.Discharge, res *gate.Result, a Authored) Input {
 	in := Input{
-		Repo: a.Repo, SkillVersion: a.SkillVersion, LexiconVer: a.LexiconVer,
+		// The lexicon label is COMPUTED by ferret plan (what it actually loaded), not typed by the
+		// auditor: a model-supplied version that disagrees with the loaded one would be a lie on the
+		// page, and a half-loaded lexicon is otherwise invisible.
+		Repo: a.Repo, SkillVersion: a.SkillVersion, LexiconVer: pl.VocabProvenance["lexicon_version"],
 		FamiliesRun: a.FamiliesRun, Findings: a.Findings,
 
 		SHA:          pl.SHA,

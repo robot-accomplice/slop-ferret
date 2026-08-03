@@ -607,3 +607,29 @@ func TestFamilyOfRecognisesTheWrittenFormsAndGuessesAtNothing(t *testing.T) {
 		}
 	}
 }
+
+// A sweep over a half-loaded lexicon must not record byte-identical to one over a repo that
+// genuinely matched nothing. vocab_provenance is computed by `ferret plan` — where the vocabulary
+// came from and how much loaded — and was read by nothing, so the distinguishing evidence never
+// reached recorded state, the one place its own doc comment says it must. The record now carries it.
+// Break it: stop copying pl.VocabProvenance in WriteRecord and this goes red.
+func TestWriteRecordCarriesVocabProvenance(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
+	t.Setenv("HOME", t.TempDir())
+	sha := headSHA(t, repo)
+	pl := planFor(t, repo)
+	pl.SHA = sha
+	pl.VocabProvenance = map[string]string{"lexicon_version": "2026-08-03.7", "signals_from_lexicon": "9"}
+	if _, err := WriteRecord(repo, pl, &Discharge{SHA: sha}, &Result{Accounting: "complete"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ListRecords(repo)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("ListRecords: err=%v n=%d", err, len(got))
+	}
+	if got[0].VocabProvenance["lexicon_version"] != "2026-08-03.7" ||
+		got[0].VocabProvenance["signals_from_lexicon"] != "9" {
+		t.Errorf("record lost vocab_provenance: %v — a half-loaded lexicon must be distinguishable "+
+			"from a clean no-match in recorded state", got[0].VocabProvenance)
+	}
+}

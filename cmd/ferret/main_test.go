@@ -440,7 +440,7 @@ func TestReportDerivesItsFiguresFromTheRealPlanAndDischarge(t *testing.T) {
 	}
 
 	findings, _ := json.Marshal(map[string]any{
-		"repo": "e2e", "skill_version": "x", "lexicon_version": "y",
+		"repo": "e2e", "skill_version": "x",
 		"families_run": []string{"H"},
 		"findings": []map[string]any{
 			{"title": "a note", "severity": "note", "status": "VERIFIED", "file": "internal/wallet/pay.go"},
