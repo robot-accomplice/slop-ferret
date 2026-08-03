@@ -1,6 +1,6 @@
 ---
 name: slop-ferret
-description: Sweep a repository for AI slop-ferret — work that LOOKS finished and is not. Dead-on-arrival features, tests that cannot fail, guards that cannot fire, fabricated claims, duplicated rules, architectural drift, and latent "almost right" defects. Use when asked to audit, sweep, or hunt slop in a codebase; as a pre-release gate on a frozen branch; or after a large burst of work. Additive-only against the target tree — never edits in place. Every finding must clear a verification gate before it is written up; SUSPECTED findings are reported to the operator, never filed; nothing is filed until the destination tracker is confirmed. Always ends with /slop-ferret:report, which builds the HTML report.
+description: Sweep a repository for AI slop — work that LOOKS finished and is not. Dead-on-arrival features, tests that cannot fail, guards that cannot fire, fabricated claims, duplicated rules, architectural drift, and latent "almost right" defects. Use when asked to audit, sweep, or hunt slop in a codebase; as a pre-release gate on a frozen branch; or after a large burst of work. Additive-only against the target tree — never edits in place. Every finding must clear a verification gate before it is written up; SUSPECTED findings are reported to the operator, never filed; nothing is filed until the destination tracker is confirmed. Always ends with /slop-ferret:report, which builds the HTML report.
 allowed-tools: Read, Grep, Glob, Bash, Write, WebSearch, WebFetch, TodoWrite, SendUserFile, Skill
 disable-model-invocation: true
 ---
@@ -169,9 +169,9 @@ SHA=$(git -C <repo> rev-parse --short HEAD)                      # CLEAN tree, a
 magma --depth 1 <repo> <name> ~/.slop-ferret/maps                # rows land in <name>/.magma/
 ferret plan ~/.slop-ferret/maps/<name> "$SHA" <repo> [--since <ref>]  > plan.json
 # ... do the sweep: read every plan.h_required path; account for EVERY candidate ...
-ferret discharge plan.json > discharge.json    # skeleton: every item, undispositioned
-#   ... do the sweep, moving each path and candidate to its disposition ...
+#   ... write discharge.json: every path you read, every candidate dispositioned ...
 ferret enumerate plan.json discharge.json <repo>  # 0 accounted · 3 items open · 4 refused
+ferret report plan.json discharge.json findings.json report.html
 ```
 
 **The generator is `magma` (`~/go/bin/magma`), and four of its properties bite.** Confirmed with
@@ -217,8 +217,8 @@ production source file — and it is enumerated too.** A signal match is a RANKI
 gate: matching nothing no longer means a file is absent from the sweep, it means nobody has looked at
 it yet.
 
-**`verify` reports two fractions and no verdict word.** `coverage.repo` is production source files
-read over the total; `coverage.plan` is items dispositioned over items raised. They are different
+**`verify` reports two fractions and no verdict word.** `attested.repo` is production source files
+read over the total; `attested.plan` is items dispositioned over items raised. They are different
 numbers, and the gap between them is the point. Exit 0 means the accounting is settled and 3 means
 items are still open — bookkeeping only, the way a test runner reports outstanding failures. **Carry
 BOTH fractions into the report banner**, not one of them and not a word.
@@ -241,13 +241,17 @@ therefore domain-bound: add the word to the lexicon's `h-signals` block and rein
 An empty worklist is a hard stop, never a clean result — `ghola` enumerated zero H-paths as an HTTP
 client because the vocabulary had no network terms, and a short worklist reads as a clean repo.
 
-**Do not hand-write the discharge.** `ferret discharge plan.json` emits it, pre-bound to the plan's
-sha and pre-filled with the facts the plan already states. Assembling it is deterministic
-transcription: doing that by hand costs tokens, varies between runs, and is where every malformed
-discharge came from — a mistyped sha binding to no plan, a forgotten unseeded family, a candidate
-omitted rather than refuted. The skeleton starts deliberately WRONG — every path unread, every
-candidate undispositioned — so an unedited one enumerates as incomplete rather than passing quietly.
-Your job is the half only you can do: having actually looked, move each item to its disposition.
+**Write the discharge yourself, from the plan you have already read.** A discharge-skeleton command
+briefly existed to emit a skeleton for you to edit; it was removed after measurement, because you
+are granted `Write` and not `Edit`, so you had to read the skeleton and emit the whole file back —
+6,020 bytes in plus 6,020 out against 3,778 to write it directly. It cost 3.2× what it saved, and
+one `jq` filter reproduced its output byte-for-byte. It also pre-filled `families_not_run` from the
+plan, which quietly satisfied the acknowledgement `enumerate` exists to demand.
+
+Take the same care by hand that the skeleton was meant to enforce: bind `sha` to the plan's sha
+exactly, carry EVERY unseeded family the plan names, and give every candidate a disposition —
+cleared, refuted or filed. A candidate omitted is not a candidate cleared, and `enumerate` counts
+it as neither.
 
 **Pass `--since <ref>` and read the unmatched-change list first.** Extending the vocabulary fixes an
 instance and never the class: the next unenumerated subsystem is exactly as silent, and nothing checks
@@ -491,7 +495,7 @@ unvalidated-language one**, and never let a structural zero enter a cross-repo t
 **Name the tell if it applies.** A sweep reporting SUSPECTED findings with **zero VERIFIED** has verified
 nothing — say that on the face of the report rather than letting a `Rate: 0.0` read as a clean result.
 Likewise a settled accounting over a tier that skipped families is settled *for that tier*, and must say
-which. **A high `coverage.plan` beside a low `coverage.repo` means the enumeration was narrow, not that
+which. **A high `attested.plan` beside a low `attested.repo` means the enumeration was narrow, not that
 the repo is clean** — say that in words when the two disagree, because a reader who sees one full
 fraction will generalise from it.
 
@@ -516,8 +520,8 @@ same way every time.
 record; the report is what a maintainer actually reads, and it is the only artifact that shows coverage,
 calibration and near-misses together.
 
-It must carry, in this order: **both coverage fractions in the banner** — `coverage.repo` and
-`coverage.plan`, each with its denominator, and never one without the other; **what was and was not covered** before
+It must carry, in this order: **both coverage fractions in the banner** — `attested.repo` and
+`attested.plan`, each with its denominator, and never one without the other; **what was and was not covered** before
 any result; findings **severity-first, never volume-first** (count runs inverse to severity — the largest
 class in the first campaign was 7,022 occurrences and cosmetic); VERIFIED and SUSPECTED **visually**
 distinct rather than captioned; every rate beside its denominator, with the rate suppressed below ~100

@@ -23,9 +23,11 @@ Worth stating plainly, because the surface is wider than a linter's:
   traversing paths, skips symlinks and device entries, and bounds the read. It stages to a temp
   directory and installs from there, so a failed or truncated fetch cannot half-apply.
 - **It runs `git` against a target repository.** The full set is `ls-files`, `diff --name-only`,
-  `remote get-url origin`, `cat-file -e`, and `show -s --format=%cs`. This list was previously
-  incomplete, and the omitted call — `remote get-url` — was the source of a path-traversal defect
-  found in review: the origin URL became a filesystem path. **"Read-only" is not a security
+  `remote get-url origin`, `cat-file -e`, `show -s --format=%cs`, `rev-list --max-parents=0`, and
+  `rev-parse --is-shallow-repository` (the last two identify the repo's root commit, which is how a
+  sweep record keys the repository). This list was previously incomplete, and the omitted call —
+  `remote get-url` — was the source of a path-traversal defect found in review: the origin URL
+  became a filesystem path. **"Read-only" is not a security
   property here:** `git -C <repo>` honours the *target's* `.git/config`, so a hostile checkout is a
   config-driven execution surface regardless of which subcommand is run.
 - **It never modifies the repository being swept.** The sweep method it supports is additive-only

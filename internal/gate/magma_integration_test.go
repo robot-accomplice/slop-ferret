@@ -5,9 +5,25 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+// jsonTagsOf returns the json field names a struct actually consumes. Deriving the set from the
+// type is the whole point: a list typed out by hand records what the author thought the struct
+// held on the day they typed it, and nothing keeps the two in step afterwards.
+func jsonTagsOf(t reflect.Type) map[string]bool {
+	out := map[string]bool{}
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		out[strings.Split(tag, ",")[0]] = true
+	}
+	return out
+}
 
 // ABORT CONDITION 2. The magma seam is this tool's entire reason to exist, and until 2026-08-02 it
 // had NEVER been executed against real magma in any test. Every fixture was hand-written from the
@@ -32,7 +48,11 @@ func TestRealMagmaEnvelopeIsFullyConsumed(t *testing.T) {
 		"main.go":                "package main\n\nfunc main() { used() }\n\nfunc used() {}\n\nfunc orphan() {}\n",
 		"internal/wallet/pay.go": "package wallet\n\nfunc Pay() {}\n",
 	})
-	sha := strings.TrimSpace(runOut(t, repo, "rev-parse", "--short", "HEAD"))
+	// The FULL 40-char object name, as a user pins with `git rev-parse HEAD`. magma stamps a 7-char
+	// abbreviation, so this exercises the abbreviation-tolerant compare on real producer output. It
+	// was written as `--short` and so agreed with the bug: both sides were 7 chars and equality
+	// passed, while every real full-length pin was refused with an impossible remedy.
+	sha := strings.TrimSpace(runOut(t, repo, "rev-parse", "HEAD"))
 
 	out := t.TempDir()
 	if b, err := exec.Command(magma, "--depth", "1", repo, "fixture", out).CombinedOutput(); err != nil {
@@ -53,12 +73,15 @@ func TestRealMagmaEnvelopeIsFullyConsumed(t *testing.T) {
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	known := map[string]bool{"contract_version": true, "generator": true, "sha": true,
-		"tree": true, "fidelity": true, "reachability_computable": true,
-		"not_computable_reason": true, "rows": true, "limitations": true}
+	// The known set is DERIVED FROM rowDoc, never hand-typed. A hand-typed list asserts the
+	// author's belief about the struct rather than the struct, so it stays green when a field is
+	// renamed out of the struct and silently stops being parsed. Verified by mutation: retagging
+	// `tree` (the dirty-map guard) or `limitations` to a name magma never emits left the previous
+	// hand-typed version of this test passing.
+	known := jsonTagsOf(reflect.TypeOf(rowDoc{}))
 	for k := range emitted {
 		if !known[k] {
-			t.Errorf("real magma emits %q and this gate does not know it exists — the last four "+
+			t.Errorf("real magma emits %q and rowDoc does not consume it — the last four "+
 				"times that happened it was a live defect", k)
 		}
 	}
@@ -97,6 +120,50 @@ func TestRealMagmaEnvelopeIsFullyConsumed(t *testing.T) {
 	res, code, err := Enumerate(pp, dp)
 	if err != nil || code != ExitOK {
 		t.Errorf("enumerate over a real-magma plan: code=%d err=%v remaining=%v", code, err, res.Remaining)
+	}
+}
+
+// EVERY FIDELITY REAL MAGMA EMITS MUST HAVE A BAR — checked against captured real output, not
+// against a fixture written here.
+//
+// The live run above can only ever produce `rta`, because building a Rust map takes 68 minutes
+// (measured: 2,206s over 834 files, rust-analyzer) and cannot run in CI. So the Go path was the
+// only path any test saw, and `semantic` — the value magma emits for Rust — was exercised by
+// nothing. Deleting it from fidelityBar left the entire suite green; that is how the original
+// Rust-mislabelling bug survived, and re-verified by mutation on 2026-08-02.
+//
+// The files below are VERBATIM magma output, byte-for-byte, not edited down: magma/0.2.0 over
+// roboticus-rust @ 7e5f0d6d. They are evidence from the producer. Regenerate them by re-running
+// magma against a Rust repo — never by hand-editing, which would put this test back to asserting
+// a belief.
+func TestEveryFidelityRealMagmaEmitsHasABar(t *testing.T) {
+	seen := map[string]string{}
+	for _, f := range []string{"real-magma-rust-dead.json", "real-magma-rust-test-only.json"} {
+		b, err := os.ReadFile(filepath.Join("testdata", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc rowDoc
+		if err := json.Unmarshal(b, &doc); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+		if doc.Fidelity == "" {
+			t.Fatalf("%s: captured magma output carries no fidelity", f)
+		}
+		seen[doc.Fidelity] = f
+	}
+	// The corpus must actually cover the non-Go backend, or this test quietly becomes the Go-only
+	// test it was written to replace.
+	if _, ok := seen["semantic"]; !ok {
+		t.Fatalf("the captured corpus no longer contains a `semantic` map, so the Rust backend is "+
+			"unexercised again; got %v", seen)
+	}
+	for fid, f := range seen {
+		if _, ok := fidelityBar[fid]; !ok {
+			t.Errorf("magma really emits fidelity %q (%s) and fidelityBar has no bar for it, so "+
+				"every candidate from that backend is labelled UNRECOGNISED and treated as the "+
+				"weakest evidence; fidelityBar = %v", fid, f, keysOf(fidelityBar))
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/robot-accomplice/slop-ferret/internal/gate"
+	"github.com/robot-accomplice/slop-ferret/internal/report"
 )
 
 func runCLI(t *testing.T, args ...string) (int, string, string) {
@@ -112,7 +114,7 @@ func fakeCheckout(t *testing.T) string {
 		"skill/SKILL.md":                       "# skill\n",
 		"skill/VERSION":                        `{"version":"2026-08-01.8"}`,
 		"skill/commands/slop-ferret-report.md": "# report\n",
-		"skill/references/ai-slop-lexicon.md":  "# lexicon\n",
+		"skill/references/ai-slop-lexicon.md":  "# lexicon\n\n```h-signals\nmoney/value: pay|wallet\n```\n",
 	} {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -358,4 +360,163 @@ func TestARecordFailureKeepsTheVerifyResultAndTheRealExitCode(t *testing.T) {
 	if !strings.Contains(errs, "warning") {
 		t.Errorf("the record failure must be surfaced as a warning: %q", errs)
 	}
+}
+
+// THE SEAM THAT HAD NEVER CARRIED A BYTE.
+//
+// `report` used to take one model-written JSON file carrying every coverage figure, while a
+// comment in internal/report claimed those figures "come from `enumerate`". They did not, and the
+// field names did not even match — `enumerate` emits a nested `attested: {repo, plan}` against the
+// renderer's flat `attested_repo`, so piping one into the other produced a page with blank
+// fractions. No test noticed because every renderer test constructed the struct in Go and none
+// exercised the JSON path at all.
+//
+// This runs the whole chain with real magma: plan -> discharge -> report, and asserts the page
+// carries figures NOBODY TYPED.
+func TestReportDerivesItsFiguresFromTheRealPlanAndDischarge(t *testing.T) {
+	magma, err := exec.LookPath("magma")
+	if err != nil {
+		t.Fatalf("magma is not on PATH; this seam must be exercised end to end: %v", err)
+	}
+	// Self-provision the skill so `ferret plan` has a vocabulary. Without this the test reads the
+	// skill deployed in the developer's ambient ~/.claude — present locally, absent on a fresh CI
+	// runner, where `plan` then refuses with an empty H vocabulary (exit 4). Every other e2e here
+	// installs into a temp HOME first; this one did not, and only first-push CI surfaced it.
+	t.Setenv("HOME", t.TempDir())
+	rootB, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Fatalf("locate repo root: %v", err)
+	}
+	if code, _, errs := runCLI(t, "install", "--from", strings.TrimSpace(string(rootB))); code != gate.ExitOK {
+		t.Fatalf("install skill so plan has a vocabulary: code=%d %s", code, errs)
+	}
+	repo := t.TempDir()
+	for rel, body := range map[string]string{
+		"go.mod":                 "module example.com/e2e\n\ngo 1.26\n",
+		"internal/wallet/pay.go": "package wallet\n\nfunc Pay() {}\n",
+		"internal/wallet/fee.go": "package wallet\n\nfunc Fee() {}\n",
+		"internal/client/get.go": "package client\n\nfunc Get() {}\n",
+	} {
+		p := filepath.Join(repo, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, a := range [][]string{{"init", "-q"}, {"add", "-A"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"}} {
+		if out, err := exec.Command("git", append([]string{"-C", repo}, a...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", a, err, out)
+		}
+	}
+	shaB, err := exec.Command("git", "-C", repo, "rev-parse", "--short", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sha := strings.TrimSpace(string(shaB))
+
+	maps := t.TempDir()
+	if b, err := exec.Command(magma, "--depth", "1", repo, "e2e", maps).CombinedOutput(); err != nil {
+		t.Fatalf("magma: %v\n%s", err, b)
+	}
+
+	code, planOut, errs := runCLI(t, "plan", filepath.Join(maps, "e2e"), sha, repo)
+	if code != gate.ExitOK {
+		t.Fatalf("plan: code=%d %s", code, errs)
+	}
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.json")
+	if err := os.WriteFile(planPath, []byte(planOut), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var pl gate.Plan
+	if err := json.Unmarshal([]byte(planOut), &pl); err != nil {
+		t.Fatal(err)
+	}
+
+	// A PARTIAL sweep: read exactly one production file. The page must show that, and the number
+	// must come from here rather than from anything the findings file says.
+	if len(pl.ProductionFiles) < 2 {
+		t.Fatalf("fixture produced %d production files, need >= 2 for a partial read",
+			len(pl.ProductionFiles))
+	}
+	dis, _ := json.Marshal(map[string]any{
+		"sha": sha, "read_paths": pl.ProductionFiles[:1],
+		"families_not_run": pl.UnseededFamilies, "tier": "1-2",
+	})
+	disPath := filepath.Join(dir, "discharge.json")
+	if err := os.WriteFile(disPath, dis, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings, _ := json.Marshal(map[string]any{
+		"repo": "e2e", "skill_version": "x",
+		"families_run": []string{"H"},
+		"findings": []map[string]any{
+			{"title": "a note", "severity": "note", "status": "VERIFIED", "file": "internal/wallet/pay.go"},
+		},
+	})
+	findPath := filepath.Join(dir, "findings.json")
+	if err := os.WriteFile(findPath, findings, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outPath := filepath.Join(dir, "r.html")
+	if code, _, errs := runCLI(t, "report", planPath, disPath, findPath, outPath); code != gate.ExitOK {
+		t.Fatalf("report: code=%d %s", code, errs)
+	}
+	page, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(page)
+
+	// Anchored to the banner sentence, not a bare substring. A `Contains(body, "1/3")` check passes
+	// on any other fraction that happens to render the same way — verified by mutation: hardcoding
+	// AttestedRepo to "9/9" left a bare-substring version of this assertion green, because the plan
+	// fraction supplied the match.
+	want := fmt.Sprintf("The auditor states <strong>1/%d</strong> source files read",
+		len(pl.ProductionFiles))
+	if !strings.Contains(body, want) {
+		t.Errorf("the banner must carry the DERIVED read fraction, computed here from the plan and "+
+			"the discharge; nothing in findings.json mentions it.\nwant: %s", want)
+	}
+	if !strings.Contains(body, "incomplete") {
+		t.Errorf("one file of %d read is an incomplete accounting and the page must say so",
+			len(pl.ProductionFiles))
+	}
+	if !strings.Contains(body, "a note") {
+		t.Error("the authored finding is missing from the page")
+	}
+}
+
+// The retired single-file format carried the coverage figures. Accepting it silently would let an
+// old input render a page whose numbers came from somewhere else while looking accepted, so the
+// unknown fields are a refusal rather than a shrug.
+func TestTheOldSingleFileReportFormatIsRefusedNotIgnored(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.json")
+	if err := os.WriteFile(old, []byte(
+		`{"repo":"x","attested_repo":"250/250","accounting":"complete","denominator":250}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := report.ParseAuthored(mustRead(t, old))
+	if err == nil {
+		t.Fatal("a findings file carrying attested_repo/accounting must be refused: those figures " +
+			"are derived, and silently dropping them is how a typed-in fraction reached a page")
+	}
+	if !strings.Contains(err.Error(), "derived") {
+		t.Errorf("the refusal must say where the figures now come from: %v", err)
+	}
+}
+
+func mustRead(t *testing.T, p string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

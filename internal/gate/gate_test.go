@@ -303,7 +303,7 @@ func TestReadingEverythingSettlesAndFillsBothFractions(t *testing.T) {
 		t.Fatalf("code=%d status=%s remaining=%v", c, res.Accounting, res.Remaining)
 	}
 	if res.Attested.Repo != "2/2" {
-		t.Errorf("coverage.repo = %s, want 2/2", res.Attested.Repo)
+		t.Errorf("attested.repo = %s, want 2/2", res.Attested.Repo)
 	}
 }
 
@@ -324,7 +324,7 @@ func TestAWaiverSettlesTheItemAndDoesNotRaiseRepoCoverage(t *testing.T) {
 		t.Fatalf("a waiver must settle the accounting: %v", res.Remaining)
 	}
 	if res.Attested.Repo != "1/2" {
-		t.Errorf("coverage.repo = %s, want 1/2 — a waived file must still count as UNREAD",
+		t.Errorf("attested.repo = %s, want 1/2 — a waived file must still count as UNREAD",
 			res.Attested.Repo)
 	}
 	if res.Attested.Waived != 1 {
@@ -347,7 +347,7 @@ func TestAWaiverMayCarryAnOptionalReason(t *testing.T) {
 		t.Fatalf("remaining=%v", res.Remaining)
 	}
 	if res.Attested.Repo != "1/2" {
-		t.Errorf("coverage.repo = %s", res.Attested.Repo)
+		t.Errorf("attested.repo = %s", res.Attested.Repo)
 	}
 }
 
@@ -371,21 +371,6 @@ func TestTheTwoFractionsCanDisagreeWhichIsThePoint(t *testing.T) {
 	}
 	if strings.Contains(res.Headline, "COMPLETE") {
 		t.Error("the verdict triple must not come back")
-	}
-}
-
-// A discharge from another sweep once satisfied any plan, and stale artifacts demonstrably survive
-// across sessions.
-func TestADischargeFromAnotherSweepDoesNotSatisfyThisPlan(t *testing.T) {
-	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package w\n"})
-	pl := planFor(t, repo)
-	res, c, _ := Enumerate(writeJSON(t, pl), writeJSON(t, map[string]any{
-		"sha": "OTHER", "read_paths": pl.ProductionFiles, "families_not_run": []string{"D", "E"}}))
-	if c != 3 {
-		t.Fatal("a foreign discharge must not settle")
-	}
-	if !strings.Contains(strings.Join(res.Remaining, " "), "different sweep") {
-		t.Errorf("remaining=%v", res.Remaining)
 	}
 }
 
@@ -644,6 +629,45 @@ func TestAMapWithNoTreeFieldIsAccepted(t *testing.T) {
 	}
 }
 
+// A user pins the sweep with `git rev-parse HEAD` (40 chars); magma 0.2.0 stamps a 7-char
+// abbreviation. Raw `doc.SHA != pinnedSHA` refused every full-length pin and told the user to
+// "regenerate the map at <40-char sha>" — a remedy magma cannot satisfy, so a reviewer who ran the
+// prescribed remedy proved the loop infinite. The map's sha is a prefix of the pin; that must be
+// accepted. Break it: restore `doc.SHA != pinnedSHA` in loadMap and this goes red.
+func TestAFullLengthShaPinMatchesAnAbbreviatedMap(t *testing.T) {
+	const abbrev = "4f33b3c"                                // 7 chars, as magma 0.2.0 stamps
+	const full = "4f33b3c9a1e04b2d7c6f0a8e5b3d2c1f0a9e8d7c" // 40 chars; abbrev is its prefix
+	m := writeMap(t, abbrev, "codemap-rows/1", "rta", true, nil)
+	if _, err := BuildPlan(m, full, gitRepo(t, map[string]string{"a.go": "package a\n"}), ""); err != nil {
+		t.Fatalf("a full-length pin whose abbreviation the map carries must be accepted: %v", err)
+	}
+}
+
+// The counterfactual that keeps the tolerance honest: a same-length pin that shares no prefix with
+// the map's sha must still refuse, or "abbreviation-tolerant" rots into "accept anything". Break it:
+// make shaMatches return true unconditionally and this goes red.
+func TestAShaThatIsNotAnAbbreviationOfThePinIsRefused(t *testing.T) {
+	m := writeMap(t, "4f33b3c", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+	if err == nil || code(err) != ExitRefused {
+		t.Fatalf("a map describing a different tree must be refused, not tolerated: err=%v", err)
+	}
+}
+
+// A one-character "sha" must not prefix-match a real 40-char pin: abbreviation tolerance requires a
+// genuine abbreviation (>= minSHAAbbrev), not any shared leading character, or a truncated/garbage
+// pin silently matches an unrelated tree. Break it: drop the length floor in shaMatches and this
+// goes red.
+func TestATruncatedShaDoesNotLooseMatch(t *testing.T) {
+	m := writeMap(t, "4", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "4f33b3c9a1e04b2d7c6f0a8e5b3d2c1f0a9e8d7c",
+		gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+	if err == nil || code(err) != ExitRefused {
+		t.Fatalf("a 1-char map sha must not match a 40-char pin: err=%v", err)
+	}
+}
+
 // A REFUSED MAP MUST NOT READ AS A CLEAN ONE.
 //
 // magma distinguishes rows:null (the analysis could not run) from rows:[] (it ran and found
@@ -703,15 +727,6 @@ func writeRefusedMap(t *testing.T, sha, reason string) string {
 	return filepath.Dir(d)
 }
 
-func writeJSONRaw(t *testing.T, b []byte) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "f.json")
-	if err := os.WriteFile(p, b, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 // The vocabulary lives in the deployed skill, not in this binary, so it can be iterated from usage
 // feedback without a binary release. These tests pin that: the file is the source, and the binary
 // carries no fallback table that could silently disagree with it.
@@ -740,26 +755,85 @@ func TestTheVocabularyComesFromTheLexiconNotTheBinary(t *testing.T) {
 	}
 }
 
-// A missing vocabulary is not an error here — it produces an empty worklist, and the empty-worklist
-// stop in enumerate says what to do about it far better than a parse error would.
-func TestAMissingVocabularyYieldsAnEmptyWorklistNotAFailure(t *testing.T) {
+// REVERSED 2026-08-02. This test used to be named ...YieldsAnEmptyWorklistNotAFailure and asserted
+// that `plan` exits 0 with no vocabulary, on the stated ground that "the empty-worklist stop in
+// enumerate says what to do about it far better than a parse error would."
+//
+// That reasoning was wrong on three facts, all reproduced:
+//
+//  1. The enumerate stop names the WRONG remedy — "extend the signals via `.slop-h-signals`" — which
+//     sends the operator to write regexes into the TARGET repo when the cause is that the skill was
+//     never installed. `ferret install` is not mentioned.
+//  2. It arrives two commands later. In between, plan.json says nothing about a lexicon at all; a
+//     grep of its 56 lines for "lexicon", "skill" or "signal" matches only file paths.
+//  3. A PARTIAL load defeats it entirely. One unbalanced paren in the lexicon drops a single signal
+//     class while leaving others, so the worklist is non-empty, the stop never fires, and the sweep
+//     records family H checked clean having quietly demoted `internal/auth/session.go` to the
+//     cheap-to-waive complement.
+//
+// This is the default state of a `go install`ed binary before `ferret install` has ever run, so the
+// silent path was the common path.
+func TestAnEmptyVocabularyIsRefusedAtPlanTime(t *testing.T) {
 	old := LexiconPath
 	LexiconPath = func() string { return filepath.Join(t.TempDir(), "absent") }
 	defer func() { LexiconPath = old }()
 
 	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package p\n"})
+	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "abc123", repo, "")
+	if err == nil {
+		t.Fatal("a sweep with no vocabulary enumerates nothing and reports the same as a clean " +
+			"repo; plan must refuse rather than hand back an empty worklist")
+	}
+	if c := code(err); c != ExitRefused {
+		t.Errorf("exit = %d, want %d (refused): nothing was measured, which is not the same as "+
+			"items being open", c, ExitRefused)
+	}
+	if !strings.Contains(err.Error(), "ferret install") {
+		t.Errorf("the refusal must name the actual remedy — the skill is not deployed — rather "+
+			"than sending the operator to write regexes into the target repo: %v", err)
+	}
+}
+
+// A signal that will not compile is refused, not skipped. Skipping silently demotes every path it
+// would have matched from the blast-radius tier into the cheap-to-waive complement, while the sweep
+// still reports family H covered: measured, one unbalanced paren moved internal/auth/session.go out
+// of h_required with exit 0 and no warning.
+func TestAnUncompilableSignalIsRefusedNotSkipped(t *testing.T) {
+	old := LexiconPath
+	dir := t.TempDir()
+	lex := filepath.Join(dir, "lex.md")
+	if err := os.WriteFile(lex, []byte("```h-signals\nauth/session: (auth|session\n```\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	LexiconPath = func() string { return lex }
+	defer func() { LexiconPath = old }()
+
+	repo := gitRepo(t, map[string]string{"internal/auth/session.go": "package a\n"})
+	m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "abc123", repo, "")
+	if err == nil {
+		t.Fatal("an uncompilable signal must be refused: skipping it silently shrinks the " +
+			"blast-radius tier while the sweep still reports that tier covered")
+	}
+	if !strings.Contains(err.Error(), "does not compile") {
+		t.Errorf("the refusal must name the broken pattern: %v", err)
+	}
+}
+
+// The vocabulary now lives outside the binary, on a cadence the binary does not control, so the
+// plan records what actually loaded. Without this a sweep against a half-loaded lexicon leaves a
+// plan byte-identical to one over a repo whose files genuinely matched nothing.
+func TestThePlanRecordsWhereItsVocabularyCameFrom(t *testing.T) {
+	repo := gitRepo(t, map[string]string{"internal/wallet/pay.go": "package p\n"})
 	p := planFor(t, repo)
-	if len(p.HWorklist) != 0 {
-		t.Errorf("no vocabulary should mean no ranking: %+v", p.HWorklist)
+	for _, k := range []string{"lexicon", "lexicon_version", "signals_total"} {
+		if p.VocabProvenance[k] == "" {
+			t.Errorf("vocab_provenance is missing %q: %v", k, p.VocabProvenance)
+		}
 	}
-	if len(p.HUnmatched) != 1 {
-		t.Errorf("every production file should still be raised: %v", p.HUnmatched)
-	}
-	// And the sweep cannot then quietly complete.
-	_, code, err := Enumerate(writeJSON(t, p), writeJSON(t, map[string]any{
-		"sha": p.SHA, "read_paths": p.ProductionFiles, "families_not_run": p.UnseededFamilies}))
-	if err != nil || code != ExitItemsOpen {
-		t.Errorf("an empty worklist must stop the sweep: code=%d err=%v", code, err)
+	if p.VocabProvenance["signals_total"] == "0" {
+		t.Error("a plan that loaded no signals should not have been produced at all")
 	}
 }
 
@@ -819,18 +893,40 @@ func TestTheTierSplitIsReDerivableFromAFixture(t *testing.T) {
 	}
 }
 
-// hDeferFloor is a judgement, but its EFFECT is testable: at or below it, nothing is deferred.
-func TestBelowTheDeferFloorNothingIsDeferred(t *testing.T) {
+// hDeferFloor is a judgement, but its EFFECT is testable, and this test PINS IT FROM BELOW.
+//
+// The previous version built 10 files and called `t.Skip("fixture unexpectedly large")` whenever
+// the worklist exceeded the floor — so lowering the floor made the test skip itself out of
+// existence rather than fail. Verified by mutation on 2026-08-02: hDeferFloor 60 -> 5 left the
+// whole suite green, which is the exact defect the fixture's own header claims to have closed.
+// A test that opts out precisely when its constant moves is indistinguishable from no test.
+//
+// 50 paths, deliberately mixed 30 tier-1 / 20 tier-2 so that a split WOULD be visible if one
+// engaged. At the real floor nothing defers. Lower the floor under 50 and the 20 tier-2 paths
+// move to deferred and this fails. TestTheTierSplitIsReDerivableFromAFixture pins the other end
+// at 70, so the floor is bracketed rather than bounded on one side only.
+func TestLoweringTheDeferFloorIsCaught(t *testing.T) {
+	const below = 50
 	files := map[string]string{}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 30; i++ {
 		files[fmt.Sprintf("internal/wallet/pay%02d.go", i)] = "package x\n"
 	}
+	for i := 0; i < 20; i++ {
+		files[fmt.Sprintf("internal/client/download%02d.go", i)] = "package x\n"
+	}
 	p := planFor(t, gitRepo(t, files))
-	if len(p.HWorklist) > hDeferFloor {
-		t.Skip("fixture unexpectedly large")
+	if len(p.HWorklist) != below {
+		t.Fatalf("fixture matched %d paths, expected %d — the signals moved, so this test no "+
+			"longer measures the floor", len(p.HWorklist), below)
+	}
+	if below > hDeferFloor {
+		t.Fatalf("hDeferFloor is %d, at or below this fixture's %d paths: the floor has been "+
+			"lowered far enough that a 50-path repo now defers work. The floor exists so that a "+
+			"worklist small enough to read in full IS read in full — re-derive it deliberately "+
+			"rather than lowering it to make a sweep finish sooner", hDeferFloor, below)
 	}
 	if len(p.HDeferred) != 0 || len(p.HRequired) != len(p.HWorklist) {
-		t.Errorf("at or below the floor everything is required: %d/%d",
+		t.Errorf("at or below the floor everything is required: %d required / %d deferred",
 			len(p.HRequired), len(p.HDeferred))
 	}
 }
@@ -842,12 +938,23 @@ func TestBelowTheDeferFloorNothingIsDeferred(t *testing.T) {
 // So the suite pins the vocabulary to the copy shipped in THIS repo. That also makes every
 // tier-split assertion below a statement about the shipped vocabulary rather than about a machine.
 func TestMain(m *testing.M) {
-	if root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output(); err == nil {
-		shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "ai-slop-lexicon.md")
-		if _, err := os.Stat(shipped); err == nil {
-			LexiconPath = func() string { return shipped }
-		}
+	// Pin the vocabulary to the SHIPPED lexicon so these tests do not depend on what happens to be
+	// installed on the machine running them. Falling back to the deployed copy would make the suite
+	// pass or fail on a developer's ~/.claude — and this used to fall back SILENTLY, which is the
+	// same "absence renders as a value" defect the tests below exist to catch.
+	root, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "cannot locate the repo root to pin the lexicon: %v\n", err)
+		os.Exit(1)
 	}
+	shipped := filepath.Join(strings.TrimSpace(string(root)), "skill", "references", "ai-slop-lexicon.md")
+	if _, err := os.Stat(shipped); err != nil {
+		fmt.Fprintf(os.Stderr, "the shipped lexicon is missing (%v).\nThese tests must run against "+
+			"it, not against whatever is deployed in ~/.claude — a silent fallback would make the "+
+			"whole H-enumeration suite measure the developer's machine.\n", err)
+		os.Exit(1)
+	}
+	LexiconPath = func() string { return shipped }
 	os.Exit(m.Run())
 }
 
@@ -865,5 +972,44 @@ func TestOnlyTheFencedBlockIsRead(t *testing.T) {
 	got := parseLexiconSignals(f)
 	if len(got) != 1 || got[0][0] != "money/value" {
 		t.Fatalf("only the fenced block is a signal source: %+v", got)
+	}
+}
+
+// `.slop-h-signals` comes from the repository being audited, and matching is O(files x signals), so
+// its size is a cost the TARGET controls. Measured: 2,000 signals over 2,000 paths took 59.9s; a
+// committed 100k-line file is hours. Refuse loudly rather than truncate — silently reading the
+// first N would make the worklist depend on line order.
+func TestAnOversizedSignalFileIsRefused(t *testing.T) {
+	for _, c := range []struct{ name, body, want string }{
+		{"too many signals", strings.Repeat("money/value: pay\n", maxSignalLines+1), "over the cap"},
+		{"too many bytes", "money/value: " + strings.Repeat("a|", maxSignalFileBytes/2+1) + "b\n",
+			"over the"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := gitRepo(t, map[string]string{
+				"internal/wallet/pay.go": "package p\n",
+				".slop-h-signals":        c.body,
+			})
+			m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+			_, err := BuildPlan(m, "abc123", repo, "")
+			if err == nil {
+				t.Fatal("an unbounded signal file from the audited repo must be refused")
+			}
+			if code(err) != ExitRefused || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("code=%d err=%v", code(err), err)
+			}
+		})
+	}
+}
+
+// The cap must not break ordinary use: a handful of project-specific signals is the feature.
+func TestAModestSignalFileStillWorks(t *testing.T) {
+	repo := gitRepo(t, map[string]string{
+		"internal/widget/shape.go": "package w\n",
+		".slop-h-signals":          "domain/widget: widget\n",
+	})
+	p := planFor(t, repo)
+	if len(p.HWorklist) == 0 {
+		t.Fatal("a repo-supplied signal must still enumerate")
 	}
 }

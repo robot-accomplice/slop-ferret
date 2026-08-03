@@ -20,14 +20,6 @@ condition can never be true.
 
 The name is the hunter, not the quarry.
 
-> **Status — NOT RELEASED. The go/no-go review returned NO-GO.**
-> Five independent red-team stations all voted against shipping. Read
-> [`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md) before relying on anything below.
->
-> The headline reason: **`coverage.repo` is computed from a self-reported list of files and nothing
-> corroborates it.** It is not a measurement of what was read. Treat every number this tool emits as
-> a claim by whoever ran it, not as evidence.
-
 ## Why
 
 A sweep for slop is mostly reading, and reading is what a model does. But a sweep also has a
@@ -43,23 +35,38 @@ rather than the repository. The tool's job is to make that distinction impossibl
 computing coverage fractions need no model. Deciding whether a finding clears its pre-filing bar
 does — and no amount of Go will do it.
 
+## Prerequisites
+
+Three, and none of them are optional:
+
+| | why | get it |
+|---|---|---|
+| **[magma](https://github.com/robot-accomplice/magma)** ≥ 0.2.0 | builds the call map `ferret plan` reads. There is no fallback: without a map, `plan` refuses. | `go install github.com/robot-accomplice/magma@latest` |
+| **magma-rust-helper** | only for Rust targets. magma shells out to it for rust-analyzer name resolution; without it magma refuses with a message naming this binary. | `cargo install --path rust-helper` from a magma checkout |
+| **[Claude Code](https://claude.com/claude-code)** | the skill half is a Claude Code skill. `ferret install` deploys into `~/.claude/`, and the sweep itself is run by an agent reading `SKILL.md`. The binary alone does not sweep anything. | — |
+
+Rust maps are **slow**: measured 68 minutes for 834 files (rust-analyzer, single pass). Budget for
+it, and reuse the map — `ferret plan` refuses a map of a different tree, so a stale one cannot
+silently be reused.
+
 ## Install
 
-Both paths work. **Pinning is recommended** — a pinned version is reproducible and reviewable, and
-publishing semver tags exists so that anyone who prefers to pin can:
+Pinning is the recommended path — a pinned version is reproducible and reviewable, and semver tags
+are published so anyone who prefers to pin can:
 
 ```bash
 go install github.com/robot-accomplice/slop-ferret/cmd/ferret@v0.1.0   # pinned (recommended)
-go install github.com/robot-accomplice/slop-ferret/cmd/ferret@latest   # tracks HEAD
+go install github.com/robot-accomplice/slop-ferret/cmd/ferret@latest   # tracks the latest tag
 ferret install
 ```
 
-No tag is published yet, so today that means `@latest` or a source build:
+`ferret install` is **required, not optional**: the H-signal vocabulary lives in the deployed
+lexicon, not in the binary. Without it `ferret plan` refuses rather than handing back an empty
+worklist. Run `ferret doctor` afterwards — it checks the deployment on its own, with no network.
 
-```bash
-git clone https://github.com/robot-accomplice/slop-ferret.git
-cd slop-ferret && just install && ferret install
-```
+**macOS and Linux only.** Windows builds are not published: `install` creates symlinks, which needs
+privilege or developer mode on Windows, and no Windows path in this tool has ever been executed.
+Publishing a binary nobody has run is the failure class this project exists to find.
 
 `install` deploys the skill into `~/.claude/skills/slop-ferret/` and writes **both** command
 entries (`/slop-ferret` and `/slop-ferret:report`).
@@ -70,13 +77,15 @@ entries (`/slop-ferret` and `/slop-ferret:report`).
 magma --depth 1 <repo> <name> ~/.slop-ferret/maps       # build the call map first
 ferret plan ~/.slop-ferret/maps/<name> <sha> <repo> [--since <ref>] > plan.json
 #   ... run the sweep, write discharge.json ...
-ferret enumerate plan.json discharge.json             # 0 settled · 3 items open
+ferret enumerate plan.json discharge.json             # 0 accounted · 3 items open
+ferret report plan.json discharge.json findings.json report.html
 ```
 
 | command | does |
 |---|---|
 | `plan` | reads the magma map, raises candidates with their pre-filing bars, enumerates the family-H worklist **and its complement** |
-| `verify` | reports two coverage fractions and a work queue |
+| `enumerate` | reports two attested fractions and a work queue |
+| `report` | renders the sweep page; every figure derived from the plan and the discharge, never typed |
 | `install` / `update` | synonyms — acquire the skill and deploy it |
 | `doctor` | drift between the deployed skill and its source, in both directions |
 | `records` | prior sweeps of a repository, newest first |
@@ -84,8 +93,8 @@ ferret enumerate plan.json discharge.json             # 0 settled · 3 items ope
 ### Two fractions, no verdict word
 
 ```
-coverage.repo   production source files read / total     "was the repo covered"
-coverage.plan   items dispositioned / items raised       "was the plan worked through"
+attested.repo   production source files read / total     "was the repo covered"
+attested.plan   items dispositioned / items raised       "was the plan worked through"
 ```
 
 They are different numbers and **the gap between them is the point**. A
@@ -106,7 +115,7 @@ covered, because that is a fraction and a fraction does not fit in a byte.
 
 ### Waivers
 
-A waiver settles the accounting and **does not** raise `coverage.repo`. Deciding not to read a file
+A waiver settles the accounting and **does not** raise `attested.repo`. Deciding not to read a file
 is a normal, correct move and costs nothing to record — but a waived file genuinely was not read,
 and the fraction exists to tell you what you actually looked at. No coverage floor is enforced:
 there is no defensible number, and a red build for reading 67% instead of 90% would only teach you

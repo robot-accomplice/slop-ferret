@@ -161,7 +161,7 @@ remoteless repos. Never inside the target repo.
 
 **Contents — two kinds of field, and the split is the point:**
 
-- **Computed** — sha, date, `coverage.repo`, `coverage.plan`, denominator, waived count, worklist
+- **Computed** — sha, date, `attested.repo`, `attested.plan`, denominator, waived count, worklist
   and complement sizes, binary/skill/lexicon versions.
 - **Attested** — tier, families not run, checked-clean *with the method used*, near-misses, finding
   counts, report file path. Supplied via optional `discharge.json` fields.
@@ -175,8 +175,8 @@ their denominators unreproducible.
 **Commands:**
 
 ```bash
-ferret verify plan.json discharge.json     # writes a record by default
-ferret verify … --no-record                # suppress
+ferret enumerate plan.json discharge.json   # writes a record by default
+ferret enumerate … --no-record              # suppress
 ferret records <repo>                      # prior sweeps, newest first
 ```
 
@@ -193,8 +193,8 @@ are small JSON and `records --last` feeding Step 0.2 is the only read path with 
 `verify` reports **two fractions and no verdict word**:
 
 ```
-coverage.repo   production source files read / total     "was the repo covered"
-coverage.plan   items dispositioned / items raised       "was the plan worked through"
+attested.repo   production source files read / total     "was the repo covered"
+attested.plan   items dispositioned / items raised       "was the plan worked through"
 ```
 
 `COMPLETE / PARTIAL / INCOMPLETE` was removed because one token cannot carry two quantities. The
@@ -203,7 +203,7 @@ is, `2` for misuse, `3` for a refusal — the way a test runner reports outstand
 nothing about whether the repository was covered, because that is a fraction and a fraction does
 not fit in a byte.
 
-**Waivers settle the accounting and never raise `coverage.repo`.** Choosing not to read a file is a
+**Waivers settle the accounting and never raise `attested.repo`.** Choosing not to read a file is a
 normal move and costs nothing to record, but a waived file genuinely was not read. **No coverage
 floor is enforced:** there is no defensible number, and a red build for reading 67% instead of 90%
 would only teach the operator to waive to clear it.
@@ -267,8 +267,17 @@ What already satisfies this spec, and what does not.
 
 ## 11. Open
 
-- **Nothing blocking.** All nine decisions are settled with the operator.
+- **BLOCKING: two go/no-go ship reviews have run and both returned NO-GO.** The nine *design*
+  decisions are settled with the operator; that is not the same as the design being shippable, and
+  an earlier version of this section said "Nothing blocking" while a NO-GO record sat committed in
+  the same repository. See [`docs/releases/v0.1.0-abort.md`](../../releases/v0.1.0-abort.md).
+- The second review (five stations, 2026-08-02) found the remediation for the first had not bound:
+  `TestRealMagmaEnvelopeIsFullyConsumed` and `testdata/tier-split-fixture.txt` both still passed
+  under mutation of the exact defects they were written to pin. Since fixed, each verified by
+  running the mutation and observing the failure.
 - The exit-code split (§7) was found by this spec's own self-review — the first thing in this
   project a design document caught before the code shipped. Now implemented.
-- The go/no-go ship review has not been run. Nothing here should be read as a statement that the
-  tool is ready; §3 is explicit that it is not.
+- **Known open, carried from review II:** `internal/report` renders entirely from unvalidated
+  model input and its field names do not match what `enumerate` emits, so that seam has never
+  carried a byte; `install` can still write a subset when a relink fails after the first write;
+  the records store keys on a target-asserted `origin`. Each is recorded at the code site.

@@ -6,6 +6,54 @@
   it from there rather than restating it. If this file and `go.mod` ever disagree, `go.mod` wins.
 - [`just`](https://github.com/casey/just)
 - [`golangci-lint`](https://golangci-lint.run/) v2.12.2 (for `just lint`)
+- **[`magma`](https://github.com/robot-accomplice/magma) v0.2.0** — `go install
+  github.com/robot-accomplice/magma@v0.2.0`. **The suite does not skip without it**, deliberately:
+  the magma seam is this tool's reason to exist and it went untested for the project's whole life
+  because every fixture was hand-written from the author's belief about the contract. A test that
+  silently skips is indistinguishable from one that ran and passed. `just check-deps` tells you
+  whether you have it.
+
+## A fix is not done when the code changes
+
+**It is done when a test fails without it.**
+
+This is the project's one hard process rule, and it exists because it was learned three times.
+Three adversarial ship reviews each found that the guards written to close the previous review did
+not bind — the tests passed under mutation of the exact defects they were written to pin. Each
+time the guard had been written from the diff rather than from the failure mode: the four strings
+that had just been fixed, the one install shape the author had in mind, the one input file they
+were editing.
+
+So when you add or change a guard:
+
+1. Write the test.
+2. **Break the code it guards and watch the test go red.** Not a similar test — that one.
+3. Restore, confirm green, and say in the test's comment what you broke.
+
+Two failure shapes to watch for, both of which shipped here:
+
+- **A test that passes for the wrong reason.** A test for "`0/0` cannot settle" passed on its first
+  run because it left `read_paths` empty, so the sweep was held open by the unread worklist and the
+  denominator was never exercised. It looked like a working guard. Remove every other reason the
+  assertion could hold before believing it.
+- **An assertion loose enough that anything satisfies it.** `strings.Contains(page, "1/3")` passed
+  while the figure it checked was hardcoded, because a different fraction on the page supplied the
+  match. Anchor to the exact rendered string.
+
+### `just mutate`
+
+Choosing mutations by hand is a list, and a list of what might break is what failed all three
+times. `just mutate ./internal/gate/` derives them instead — it runs
+[gremlins](https://github.com/go-gremlins/gremlins) over a package and reports which mutants no
+test killed.
+
+It is deliberately **not** part of `just ci`: the `gate` package alone is ~220 mutants at roughly
+ten seconds each. Run it before a release and after touching a guard.
+
+Survivors need triage, not a number. Some are equivalent mutants — `n++` where `n` is only ever
+compared to zero behaves identically as `n--`. Some are display-only counters. Record which, in the
+commit or the test. **An efficacy percentage nobody has triaged is exactly the kind of figure this
+project exists to distrust**, and reporting one would be the same defect in a new place.
 
 ## Getting started
 

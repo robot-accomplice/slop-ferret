@@ -1,6 +1,7 @@
 package gate
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -94,6 +95,32 @@ func pct(done, total int) *float64 {
 
 // Verify reports two fractions and a work queue. Every clause below was absent at some point and
 // is here because its absence was reproduced, not imagined.
+// LoadSweep parses a plan and a discharge and enumerates them, returning all three. It exists so
+// that `report` derives its coverage figures from THE SAME parse and THE SAME arithmetic that
+// `enumerate` runs, rather than from numbers an auditor typed into a findings file.
+//
+// The renderer used to take every figure as model-supplied JSON while a comment claimed they
+// "come from enumerate so the report cannot disagree" — and the field names did not even match, so
+// the seam had never carried a byte. Routing both commands through one function is what makes that
+// claim structurally true instead of aspirational: there is no longer a parameter to disagree with.
+func LoadSweep(planPath, dischargePath string) (*Plan, *Discharge, *Result, int, error) {
+	pl, dis, err := loadPlanAndDischarge(planPath, dischargePath)
+	if err != nil {
+		return nil, nil, nil, ExitMisuse, err
+	}
+	res, code, err := Enumerate(planPath, dischargePath)
+	return pl, dis, res, code, err
+}
+
+// decodeStrict rejects unknown fields. ParseAuthored already refuses them in the findings file; the
+// plan and the discharge drive everything and did not, so a mistyped key (read_path for read_paths)
+// unmarshalled to nothing and the sweep reported zero of whatever it carried, with no error.
+func decodeStrict(b []byte, v any) error {
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.DisallowUnknownFields()
+	return d.Decode(v)
+}
+
 func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, error) {
 	pb, err := os.ReadFile(planPath)
 	if err != nil {
@@ -104,12 +131,14 @@ func loadPlanAndDischarge(planPath, dischargePath string) (*Plan, *Discharge, er
 		return nil, nil, die(ExitMisuse, "reading discharge: %v", err)
 	}
 	var pl Plan
-	if err := json.Unmarshal(pb, &pl); err != nil {
-		return nil, nil, die(ExitMisuse, "plan is not valid JSON: %v", err)
+	if err := decodeStrict(pb, &pl); err != nil {
+		return nil, nil, die(ExitMisuse, "plan is not valid JSON or carries an unknown field "+
+			"(a typo silently reads back as nothing): %v", err)
 	}
 	var dis Discharge
-	if err := json.Unmarshal(db, &dis); err != nil {
-		return nil, nil, die(ExitMisuse, "discharge is not valid JSON: %v", err)
+	if err := decodeStrict(db, &dis); err != nil {
+		return nil, nil, die(ExitMisuse, "discharge is not valid JSON or carries an unknown field "+
+			"(a typo silently reads back as nothing): %v", err)
 	}
 	return &pl, &dis, nil
 }
@@ -154,9 +183,25 @@ func Enumerate(planPath, dischargePath string) (*Result, int, error) {
 	// unknown MAP contract with exit 4. The asymmetry meant any future field rename would degrade
 	// to zeros and SETTLE rather than refuse — guarding the input we did not design and not the one
 	// we did.
-	if pl.Contract != "" && pl.Contract != planContract {
-		return nil, ExitRefused, die(ExitRefused, "plan contract %q is not %q — this plan was "+
-			"written by a different version of ferret; re-run `ferret plan`", pl.Contract, planContract)
+	// The contract is MANDATORY, not opt-in. It used to read `pl.Contract != "" && ...`, so a plan
+	// that simply omitted the field was accepted — which is the shape a hand-written plan takes,
+	// and hand-written plans are how a sweep that never ran produces a settled record.
+	if pl.Contract != planContract {
+		return nil, ExitRefused, die(ExitRefused, "plan contract %q is not %q — a plan must come "+
+			"from `ferret plan`, which stamps this. An absent contract used to be accepted, which "+
+			"made a hand-written plan indistinguishable from a real one", pl.Contract, planContract)
+	}
+
+	// A DENOMINATOR OF ZERO IS NOT A CLEAN SWEEP. ABORT I condition 4 required this verbatim
+	// ("`0/0` cannot settle") and it was never implemented: a plan with an empty `production_files`
+	// reported attested.repo "0/0", accounting complete, exit 0, empty remaining, and wrote a
+	// durable record. There is no repository that describes — it is an instrument reading of
+	// nothing, and this tool exists to stop nothing from reading as clean.
+	if pl.ProductionTotal == 0 || len(pl.ProductionFiles) == 0 {
+		return nil, ExitRefused, die(ExitRefused, "the plan names no production files, so there is "+
+			"no denominator and nothing to be complete ABOUT. `0/0` is not coverage. If the "+
+			"repository really has no source files this tool has nothing to say about it; if it "+
+			"has some, the plan is wrong — re-run `ferret plan`")
 	}
 
 	var remaining []string
@@ -249,7 +294,7 @@ func Enumerate(planPath, dischargePath string) (*Result, int, error) {
 			"still unread. A signal miss is not a clearance — nothing has looked at them yet, so "+
 			"they are the natural next place to spend time. Read what is worth reading and waive "+
 			"the rest in `coverage_waived` (a reason is optional; waived counts as unread in "+
-			"`coverage.repo`, which is the point)", len(undispositioned)))
+			"`attested.repo`, which is the point)", len(undispositioned)))
 	}
 	if len(unread) > 0 {
 		remaining = append(remaining, fmt.Sprintf("%d REQUIRED family-H path(s) unattested: the "+

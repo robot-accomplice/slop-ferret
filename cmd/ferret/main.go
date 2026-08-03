@@ -1,7 +1,8 @@
 // Command ferret is the tool half of the slop-ferret method.
 //
 //	ferret plan <map-dir> <sha> <repo> [--since <ref>]   > plan.json
-//	ferret enumerate <plan.json> <discharge.json>            ; 0 settled, 3 open, 4 refused
+//	ferret enumerate <plan.json> <discharge.json>         0 accounted, 3 open, 4 refused
+//	ferret report <plan> <discharge> <findings> <out>     render the sweep page
 //	ferret install|update [--ref <r>] [--from <dir>]      acquire and deploy the skill
 //	ferret doctor                                         drift, in both directions
 //	ferret version                                        binary version
@@ -10,9 +11,13 @@
 //
 // The split it enforces: DETERMINISTIC TRANSFORMS belong here, JUDGEMENT belongs in the skill.
 // Enumerating files and computing coverage fractions need no model. Deciding whether a finding
-// clears its pre-filing bar does, and no amount of Go will do it — which is also why the HTML
-// report is authored rather than generated, and why its spec lives in the skill where it can be
-// revised without a binary release.
+// clears its pre-filing bar does, and no amount of Go will do it.
+//
+// That split is why `report` takes the plan and the discharge rather than one findings file: the
+// page's PROSE is judgement and comes from the auditor, while its ARITHMETIC is a transform and is
+// recomputed here from the same inputs `enumerate` reads. A version of this comment used to say
+// the report was "authored rather than generated" — it said so in the same file that dispatches to
+// a renderer, which is the defect class this tool exists to hunt.
 package main
 
 import (
@@ -34,9 +39,9 @@ const binVersion = "0.1.0"
 const usage = `ferret — ferrets AI slop out of a repository
 
   ferret plan <map-dir> <sha> <repo> [--since <ref>]    > plan.json
-  ferret discharge <plan.json>                          > discharge skeleton, all undispositioned
+
   ferret enumerate <plan.json> <discharge.json> [<repo>]  0 accounted · 3 items open · 4 refused
-  ferret report <input.json> <out.html>                 render the sweep report
+  ferret report <plan.json> <discharge.json> <findings.json> <out.html>
   ferret records <repo>                                 prior sweeps, newest first
   ferret install [--ref <ref>] [--from <dir>]           acquire the skill and deploy it
   ferret update                                         synonym of install
@@ -69,64 +74,64 @@ func run(argv []string, stdout, stderr io.Writer) int {
 		return cmdVerify(args, stdout, stderr)
 	case "install", "update": // D4: synonyms — both acquire prose and deploy it
 		return cmdInstall(args, stdout, stderr)
-	case "discharge":
-		if len(args) != 1 {
-			fmt.Fprintln(stderr, usage)
-			return gate.ExitMisuse
-		}
-		b, err := os.ReadFile(args[0])
-		if err != nil {
-			return fail(err, stderr)
-		}
-		var pl gate.Plan
-		if err := json.Unmarshal(b, &pl); err != nil {
-			return fail(err, stderr)
-		}
-		sk, err := gate.Skeleton(&pl)
-		if err != nil {
-			return fail(err, stderr)
-		}
-		fmt.Fprintln(stdout, string(sk))
-		return gate.ExitOK
 	case "report":
-		if len(args) != 2 {
+		// The plan and the discharge are arguments so that every coverage figure on the page is
+		// DERIVED from them here, by the same code `enumerate` runs. The findings file carries no
+		// fraction and has nowhere to put one.
+		if len(args) != 4 {
 			fmt.Fprintln(stderr, usage)
 			return gate.ExitMisuse
 		}
-		b, err := os.ReadFile(args[0])
+		pl, dis, res, _, err := gate.LoadSweep(args[0], args[1])
 		if err != nil {
 			return fail(err, stderr)
 		}
-		in, err := report.ParseInput(b)
+		b, err := os.ReadFile(args[2])
 		if err != nil {
 			return fail(err, stderr)
 		}
-		f, err := os.Create(args[1])
+		authored, err := report.ParseAuthored(b)
+		if err != nil {
+			return fail(err, stderr)
+		}
+		f, err := os.Create(args[3])
 		if err != nil {
 			return fail(err, stderr)
 		}
 		defer f.Close()
-		if err := report.Render(f, in); err != nil {
+		if err := report.Render(f, report.FromSweep(pl, dis, res, authored)); err != nil {
 			return fail(err, stderr)
 		}
-		fmt.Fprintf(stderr, "report written: %s\n", args[1])
+		// An incomplete sweep still gets a page — the report is how you SEE that it is incomplete.
+		// The accounting reaches the reader on the page, not by withholding it.
+		fmt.Fprintf(stderr, "report written: %s (accounting: %s)\n", args[3], res.Accounting)
 		return gate.ExitOK
 	case "records":
 		if len(args) != 1 {
 			fmt.Fprintln(stderr, usage)
 			return gate.ExitMisuse
 		}
+		// A legacy record is REPORTED, not swallowed and not fatal: the readable rows are still
+		// worth printing, and the unreadable ones must not simply be absent from a listing whose
+		// whole job is to tell the next sweep what ground was already covered.
 		recs, err := gate.ListRecords(args[0])
 		if err != nil {
-			return fail(err, stderr)
+			fmt.Fprintf(stderr, "ferret: %v\n", err)
 		}
 		for _, r := range recs {
 			sha := r.SHA
 			if len(sha) > 12 {
 				sha = sha[:12]
 			}
-			fmt.Fprintf(stdout, "%s  %s  stated-read %s  plan %s  %s\n",
-				r.Date, sha, r.AttestedRepo, r.AttestedPlan, r.Accounting)
+			// The store is keyed by root commit now, so the directory name is a hash. The origin
+			// is printed here instead — readable where a human actually reads it, and recorded
+			// rather than trusted: it never places the record.
+			origin := r.Origin
+			if origin == "" {
+				origin = "(no remote)"
+			}
+			fmt.Fprintf(stdout, "%s  %s  stated-read %s  plan %s  %s  %s\n",
+				r.Date, sha, r.AttestedRepo, r.AttestedPlan, r.Accounting, origin)
 		}
 		return gate.ExitOK
 	case "doctor":

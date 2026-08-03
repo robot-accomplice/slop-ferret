@@ -19,8 +19,8 @@
 //
 // `verify` reports TWO FRACTIONS and no verdict word:
 //
-//	coverage.repo  production source files read / total    <- "was the repo covered"
-//	coverage.plan  items dispositioned / items raised      <- "was the plan worked through"
+//	attested.repo  production source files read / total    <- "was the repo covered"
+//	attested.plan  items dispositioned / items raised      <- "was the plan worked through"
 //
 // COMPLETE/PARTIAL/INCOMPLETE were removed because one token cannot carry two quantities.
 // Measured on ghola @4f33b3c: 10/10 on the plan, 17/25 on the repo, reported COMPLETE — while the
@@ -42,12 +42,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 const (
 	mapSubdir    = ".magma"
 	planContract = "slop-gate/2"
+	// minSHAAbbrev is the shortest git object name shaMatches will treat as a real abbreviation of a
+	// different-length name. git's default abbreviation and what magma 0.2.0 stamps are both 7; below
+	// this a truncated or garbage name could prefix-match an unrelated tree.
+	minSHAAbbrev = 7
 )
 
 var supportedContracts = map[string]bool{"codemap-rows/1": true}
@@ -204,6 +209,12 @@ type Plan struct {
 	Fidelity               string            `json:"fidelity"`
 	ReachabilityComputable bool              `json:"reachability_computable"`
 	MapProvenance          map[string]string `json:"map_provenance"`
+	// VocabProvenance records where the H vocabulary came from and how much of it loaded. Without
+	// it, a sweep run against a half-loaded lexicon leaves a plan and a record byte-identical to
+	// one over a repo whose files genuinely matched nothing — the failure and the clean result look
+	// the same, which makes root-causing from recorded state impossible for the seam most likely to
+	// break (an unversioned markdown file in another tool's config tree).
+	VocabProvenance        map[string]string `json:"vocab_provenance"`
 	NotComputableReason    string            `json:"not_computable_reason,omitempty"`
 	MapLimitations         []string          `json:"map_limitations,omitempty"`
 	UnseededFamilies       []string          `json:"unseeded_families"`
@@ -253,23 +264,61 @@ type rowDoc struct {
 	} `json:"clusters"`
 }
 
-func loadSignals(repo string) []signal {
+// loadSignals compiles the H vocabulary, and FAILS LOUD in three places that used to fail silent.
+//
+//  1. An unreadable or fence-less lexicon returned nil, so `ferret plan` exited 0 with an empty
+//     worklist and said nothing about a lexicon anywhere in plan.json. That is the default state of
+//     a `go install`ed binary before `ferret install` has ever run. The complaint surfaced two
+//     steps later at `enumerate` and named the WRONG remedy — "extend the signals via
+//     `.slop-h-signals`" — sending the operator to write regexes into the target repo when the
+//     cause was a missing skill.
+//  2. A signal that failed to compile was `continue`d. One unbalanced paren in the lexicon moved
+//     `internal/auth/session.go` out of the required tier and into the cheap-to-waive complement,
+//     with exit 0 and no warning, while the sweep still recorded family H checked clean.
+//  3. Nothing counted what loaded, so a sweep run with a half-loaded vocabulary left a record
+//     byte-indistinguishable from a repo whose files genuinely matched nothing.
+func loadSignals(repo string) ([]signal, int, error) {
 	src := [][2]string{}
-	if p := LexiconPath(); p != "" {
-		src = append(src, parseLexiconSignals(p)...)
+	lexicon := LexiconPath()
+	if lexicon != "" {
+		src = append(src, parseLexiconSignals(lexicon)...)
 	}
+	fromLexicon := len(src)
 	// Path-based H enumeration is vocabulary-bound; a project whose domain terms are missing must
 	// be able to add them rather than silently get a short worklist.
-	src = append(src, parseSignalFile(filepath.Join(repo, ".slop-h-signals"))...)
+	repoSignals, err := parseSignalFile(filepath.Join(repo, ".slop-h-signals"))
+	if err != nil {
+		return nil, 0, err
+	}
+	src = append(src, repoSignals...)
+
 	out := make([]signal, 0, len(src))
 	for _, p := range src {
 		rx, err := regexp.Compile(`(?i)` + anchor + `(` + p[1] + `)`)
 		if err != nil {
-			continue
+			return nil, 0, die(ExitRefused, "signal %q does not compile: %v\n\nThe H vocabulary is "+
+				"the blast-radius tier. Dropping a signal that will not compile silently demotes "+
+				"every path it would have matched to the cheap-to-waive complement, and the sweep "+
+				"still reports family H covered. Fix the pattern in %s or in %s",
+				p[0], err, lexicon, filepath.Join(repo, ".slop-h-signals"))
 		}
 		out = append(out, signal{reason: p[0], rx: rx})
 	}
-	return out
+	if len(out) == 0 {
+		return nil, 0, die(ExitRefused, "the H vocabulary is EMPTY — no signals loaded from %s.\n\n"+
+			"A sweep with no vocabulary enumerates nothing and produces a report indistinguishable "+
+			"from a clean one. This is what an uninstalled skill looks like, not a clean repo.\n"+
+			"Run `ferret install` to deploy the skill, then `ferret doctor` to confirm it.",
+			lexiconOrNone(lexicon))
+	}
+	return out, fromLexicon, nil
+}
+
+func lexiconOrNone(p string) string {
+	if p == "" {
+		return "(no lexicon path could be resolved — is HOME set?)"
+	}
+	return p
 }
 
 func gitLines(repo string, args ...string) ([]string, error) {
@@ -387,6 +436,30 @@ func unmatchedChanges(repo, since string, signals []signal) ([]WorkItem, error) 
 	return holes, nil
 }
 
+// shaMatches reports whether two git object names refer to the same commit when one may be an
+// abbreviation of the other. magma stamps a 7-char abbreviation; a user pins `git rev-parse HEAD`
+// (40 chars). Raw string equality refused every full-length pin and prescribed an impossible remedy
+// ("regenerate the map at <40-char sha>", which magma never emits), so the loop never terminated.
+// Equal-length names must match exactly — that keeps the dirty-tree and same-length refusals
+// unchanged. When lengths differ the shorter must be a genuine abbreviation: at least minSHAAbbrev
+// chars and a prefix of the longer, so a truncated or garbage name cannot match an unrelated tree.
+func shaMatches(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if len(a) == len(b) {
+		return a == b
+	}
+	short, long := a, b
+	if len(short) > len(long) {
+		short, long = long, short
+	}
+	if len(short) < minSHAAbbrev {
+		return false
+	}
+	return strings.HasPrefix(long, short)
+}
+
 func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, error) {
 	d := mapdir
 	if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
@@ -427,7 +500,7 @@ func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, e
 				"one this gate may accept), codemap-graph/1 (graph.json), magma-code-graph/1 "+
 				"(the architext emit).", name, doc.ContractVersion)
 		}
-		if doc.SHA != pinnedSHA {
+		if !shaMatches(doc.SHA, pinnedSHA) {
 			return nil, nil, die(ExitRefused, "%s sha %q != pinned %q — the map describes a "+
 				"different tree than the sweep; regenerate the map at %s.",
 				name, doc.SHA, pinnedSHA, pinnedSHA)
@@ -468,7 +541,7 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"candidates_refuted:[{file,symbol}]} and run `ferret enumerate`. `coverage_waived` entries may be " +
 	"a bare path or {path, reason} — a reason is OPTIONAL. Waiving is cheap on purpose: deciding " +
 	"not to read a file is a normal, correct move and should cost nothing. It settles the " +
-	"ACCOUNTING and leaves `coverage.repo` alone, because a waived file genuinely was not read " +
+	"ACCOUNTING and leaves `attested.repo` alone, because a waived file genuinely was not read " +
 	"and the fraction is there to tell YOU what you actually looked at. No coverage floor is " +
 	"enforced: there is no defensible number, and a red build for reading 67% instead of 90% " +
 	"would only teach you to waive to clear it. `sha` must equal this plan's sha. " +
@@ -476,7 +549,14 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"candidates_cleared or an item stays open. EVERY candidate must appear in candidates_cleared " +
 	"or candidates_refuted — a candidate you looked at and discarded goes in `candidates_refuted`; " +
 	"leaving it out of both is not a clean sweep, it is an unfinished one. `families_not_run` " +
-	"MUST list every family in unseeded_families."
+	"MUST list every family in unseeded_families. OPTIONAL attested fields enrich the record the " +
+	"next sweep leans on and the report shows; a sweep that supplies none still verifies: `tier` " +
+	"(the deepest tier you worked), `near_misses`:[...] (candidates you refuted before filing and " +
+	"what refuted each — the report surfaces these, they are invisible everywhere else), " +
+	"`checked_clean`:[{class, method}] (a family recorded clean WITH the method that checked it; " +
+	"the method is not optional decoration — without it the next sweep cannot trust the claim), " +
+	"`findings_verified` and `findings_suspected` (counts), and `report_path` (where you wrote " +
+	"the HTML report)."
 
 // BuildPlan is `ferret plan`.
 func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
@@ -567,7 +647,10 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 	}
 	sort.Strings(unseededFamilies)
 
-	signals := loadSignals(repo)
+	signals, fromLexicon, err := loadSignals(repo)
+	if err != nil {
+		return nil, err
+	}
 	production, unclassified, err := ProductionFiles(repo)
 	if err != nil {
 		return nil, err
@@ -611,6 +694,13 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 		ReachabilityComputable: dead.ReachabilityComputable,
 		MapProvenance: map[string]string{"generator": dead.Generator,
 			"contract_version": dead.ContractVersion},
+		VocabProvenance: map[string]string{
+			"lexicon":              lexiconOrNone(LexiconPath()),
+			"lexicon_version":      lexiconVersion(LexiconPath()),
+			"signals_total":        strconv.Itoa(len(signals)),
+			"signals_from_lexicon": strconv.Itoa(fromLexicon),
+			"signals_from_repo":    strconv.Itoa(len(signals) - fromLexicon),
+		},
 		NotComputableReason: dead.NotComputableReason,
 		MapLimitations:      limNames(dead.Limitations),
 		UnseededFamilies:    unseededFamilies, UnseededDetail: unseededDetail,
@@ -690,16 +780,43 @@ func parseLexiconSignals(path string) [][2]string {
 // A missing file is not an error: the vocabulary is optional by construction, and an empty worklist
 // is already a hard stop in `enumerate`, which says what to do about it far better than a parse
 // error here would.
-func parseSignalFile(path string) [][2]string {
+// Matching is O(files x signals), so the signal count is a COST the target repository controls.
+// Measured on 2,000 production paths: 200 signals 4.1s, 500 15.1s, 1,000 20.2s, 2,000 59.9s — so a
+// committed 100k-line file is hours. `.slop-h-signals` comes from the repo under audit, and this
+// tool exists to be pointed at repositories you have reason to distrust; unbounded input from that
+// source is a denial of service on the operator, not on anyone else.
+//
+// The caps are generous against real use (the shipped lexicon carries 9) and refuse loudly rather
+// than truncating: silently reading the first N would produce a sweep whose worklist depended on
+// line order, which is worse than not running.
+const (
+	maxSignalFileBytes = 256 << 10
+	maxSignalLines     = 500
+)
+
+func parseSignalFile(path string) ([][2]string, error) {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
-		return nil
+		return nil, nil
+	}
+	if fi.Size() > maxSignalFileBytes {
+		return nil, die(ExitRefused, "%s is %d bytes, over the %d-byte cap. Signal matching is "+
+			"O(files x signals) and this file comes from the repository being audited, so an "+
+			"oversized one stalls the sweep rather than shortening it",
+			path, fi.Size(), maxSignalFileBytes)
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
-	return parseSignalLines(string(b))
+	out := parseSignalLines(string(b))
+	if len(out) > maxSignalLines {
+		return nil, die(ExitRefused, "%s defines %d signals, over the cap of %d. Measured cost: "+
+			"2,000 signals over 2,000 paths takes ~60s, and it scales with both. Narrow the file "+
+			"rather than raising this, or the worklist it produces is not one anybody will wait for",
+			path, len(out), maxSignalLines)
+	}
+	return out, nil
 }
 
 func parseSignalLines(body string) [][2]string {
@@ -717,4 +834,23 @@ func parseSignalLines(body string) [][2]string {
 		out = append(out, [2]string{reason, rx})
 	}
 	return out
+}
+
+// lexiconVersion reads the deployed lexicon's `version:` line. It is recorded on the plan because
+// the vocabulary now lives OUTSIDE the binary, on a cadence the binary does not control: without
+// it, two sweeps that enumerated different worklists for the same tree leave no trace of why.
+func lexiconVersion(path string) string {
+	if path == "" {
+		return "unknown"
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "unreadable"
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "version:"); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return "unstated"
 }

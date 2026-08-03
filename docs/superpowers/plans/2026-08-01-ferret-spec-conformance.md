@@ -618,8 +618,8 @@ import (
 type Record struct {
 	SHA          string `json:"sha"`
 	Date         string `json:"date"`
-	CoverageRepo string `json:"coverage_repo"`
-	CoveragePlan string `json:"coverage_plan"`
+	CoverageRepo string `json:"attested_repo"`
+	CoveragePlan string `json:"attested_plan"`
 	Denominator  int    `json:"denominator"`
 	Waived       int    `json:"waived"`
 	WorklistSize int    `json:"worklist_size"`
