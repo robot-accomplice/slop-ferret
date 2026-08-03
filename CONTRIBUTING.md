@@ -6,6 +6,12 @@
   it from there rather than restating it. If this file and `go.mod` ever disagree, `go.mod` wins.
 - [`just`](https://github.com/casey/just)
 - [`golangci-lint`](https://golangci-lint.run/) v2.12.2 (for `just lint`)
+- **[`magma`](https://github.com/robot-accomplice/magma) v0.2.0** — `go install
+  github.com/robot-accomplice/magma@v0.2.0`. **The suite does not skip without it**, deliberately:
+  the magma seam is this tool's reason to exist and it went untested for the project's whole life
+  because every fixture was hand-written from the author's belief about the contract. A test that
+  silently skips is indistinguishable from one that ran and passed. `just check-deps` tells you
+  whether you have it.
 
 ## Getting started
 

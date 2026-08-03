@@ -703,15 +703,6 @@ func writeRefusedMap(t *testing.T, sha, reason string) string {
 	return filepath.Dir(d)
 }
 
-func writeJSONRaw(t *testing.T, b []byte) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "f.json")
-	if err := os.WriteFile(p, b, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 // The vocabulary lives in the deployed skill, not in this binary, so it can be iterated from usage
 // feedback without a binary release. These tests pin that: the file is the source, and the binary
 // carries no fallback table that could silently disagree with it.

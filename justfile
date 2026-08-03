@@ -1,5 +1,9 @@
 # slop-ferret developer tasks. Run `just` to list recipes.
 # `just ci` mirrors .github/workflows/ci.yml so you can validate locally before pushing.
+#
+# It checks its own prerequisites first. The integration tests run REAL magma and fail rather than
+# skip when it is absent, so without `check-deps` a contributor's first `just ci` is a wall of
+# failures that look like their change broke something.
 
 min_coverage := "80"
 
@@ -64,7 +68,20 @@ doctor:
     go run ./cmd/ferret doctor
 
 # Full local CI validation — same gates as GitHub Actions
-ci: fmt-check vet lint build cover
+# Fail early and by name, rather than as an unexplained test failure three minutes in.
+check-deps:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! command -v magma >/dev/null; then
+      echo "magma is not on PATH." >&2
+      echo "  The magma seam is the one this tool exists for, and its tests fail rather than skip:" >&2
+      echo "  a test that silently skips is indistinguishable from one that ran and passed." >&2
+      echo "  go install github.com/robot-accomplice/magma@v0.2.0" >&2
+      exit 1
+    fi
+    echo "magma: $(magma --version 2>&1 | head -1)"
+
+ci: check-deps fmt-check vet lint build cover
     @echo "✓ local CI validation passed"
 
 # Tidy module dependencies

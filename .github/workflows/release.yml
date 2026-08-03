@@ -78,7 +78,16 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+          # NO WINDOWS. `install` creates symlinks (internal/install: os.Symlink), which needs
+          # privilege or developer mode on Windows, and no Windows path in this tool has ever been
+          # executed -- CI is ubuntu-latest at every job and there is not one runtime.GOOS branch in
+          # the source. The first review accepted this risk ONLY on the stated ground that the
+          # honest remedy was to stop publishing the binary; it kept being published, so that
+          # deferral's own justification had lapsed. Shipping a binary nobody has run is the failure
+          # class this project exists to find, and shipping it from this project is worse.
+          #
+          # Restore windows/amd64 when a Windows job runs the suite and `install` has a tested path.
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${t%/*}"; arch="${t#*/}"
             bin="ferret"; [ "$os" = "windows" ] && bin="ferret.exe"
             echo "==> ${os}/${arch}"
