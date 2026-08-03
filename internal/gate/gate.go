@@ -549,7 +549,14 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"candidates_cleared or an item stays open. EVERY candidate must appear in candidates_cleared " +
 	"or candidates_refuted — a candidate you looked at and discarded goes in `candidates_refuted`; " +
 	"leaving it out of both is not a clean sweep, it is an unfinished one. `families_not_run` " +
-	"MUST list every family in unseeded_families."
+	"MUST list every family in unseeded_families. OPTIONAL attested fields enrich the record the " +
+	"next sweep leans on and the report shows; a sweep that supplies none still verifies: `tier` " +
+	"(the deepest tier you worked), `near_misses`:[...] (candidates you refuted before filing and " +
+	"what refuted each — the report surfaces these, they are invisible everywhere else), " +
+	"`checked_clean`:[{class, method}] (a family recorded clean WITH the method that checked it; " +
+	"the method is not optional decoration — without it the next sweep cannot trust the claim), " +
+	"`findings_verified` and `findings_suspected` (counts), and `report_path` (where you wrote " +
+	"the HTML report)."
 
 // BuildPlan is `ferret plan`.
 func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {

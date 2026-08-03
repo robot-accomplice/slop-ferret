@@ -53,10 +53,12 @@ and deterministic — two runs over the same input are byte-identical.
 ```
 
 **There is no field for a coverage fraction, and that is deliberate.** `attested.repo`,
-`attested.plan`, the waived count, the denominator, the accounting, the tier, near-misses,
-checked-clean and families-not-run are all **derived by `ferret report`** from the plan and the
-discharge, using the same code `ferret enumerate` runs. You cannot type them, so the page cannot
-disagree with the sweep that produced it.
+`attested.plan`, the waived count, the denominator, the accounting and families-not-run are all
+**derived by `ferret report`** from the plan and the discharge, using the same code `ferret
+enumerate` runs. The tier, near-misses and checked-clean are **carried from the discharge you
+already wrote** — the optional attested fields the plan's `instructions` describe, not re-typed
+here. Either way none of them belong in `findings.json`, so the page cannot disagree with the
+sweep that produced it.
 
 A findings file carrying `attested_repo` or `accounting` is **refused, not ignored** — those
 figures used to be model-supplied, and silently dropping them would let an old file render a page
