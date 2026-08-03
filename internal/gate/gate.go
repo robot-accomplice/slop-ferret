@@ -49,6 +49,10 @@ import (
 const (
 	mapSubdir    = ".magma"
 	planContract = "slop-gate/2"
+	// minSHAAbbrev is the shortest git object name shaMatches will treat as a real abbreviation of a
+	// different-length name. git's default abbreviation and what magma 0.2.0 stamps are both 7; below
+	// this a truncated or garbage name could prefix-match an unrelated tree.
+	minSHAAbbrev = 7
 )
 
 var supportedContracts = map[string]bool{"codemap-rows/1": true}
@@ -432,6 +436,30 @@ func unmatchedChanges(repo, since string, signals []signal) ([]WorkItem, error) 
 	return holes, nil
 }
 
+// shaMatches reports whether two git object names refer to the same commit when one may be an
+// abbreviation of the other. magma stamps a 7-char abbreviation; a user pins `git rev-parse HEAD`
+// (40 chars). Raw string equality refused every full-length pin and prescribed an impossible remedy
+// ("regenerate the map at <40-char sha>", which magma never emits), so the loop never terminated.
+// Equal-length names must match exactly — that keeps the dirty-tree and same-length refusals
+// unchanged. When lengths differ the shorter must be a genuine abbreviation: at least minSHAAbbrev
+// chars and a prefix of the longer, so a truncated or garbage name cannot match an unrelated tree.
+func shaMatches(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if len(a) == len(b) {
+		return a == b
+	}
+	short, long := a, b
+	if len(short) > len(long) {
+		short, long = long, short
+	}
+	if len(short) < minSHAAbbrev {
+		return false
+	}
+	return strings.HasPrefix(long, short)
+}
+
 func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, error) {
 	d := mapdir
 	if fi, err := os.Stat(d); err != nil || !fi.IsDir() {
@@ -472,7 +500,7 @@ func loadMap(mapdir, pinnedSHA string) (map[string]*rowDoc, map[string]string, e
 				"one this gate may accept), codemap-graph/1 (graph.json), magma-code-graph/1 "+
 				"(the architext emit).", name, doc.ContractVersion)
 		}
-		if doc.SHA != pinnedSHA {
+		if !shaMatches(doc.SHA, pinnedSHA) {
 			return nil, nil, die(ExitRefused, "%s sha %q != pinned %q — the map describes a "+
 				"different tree than the sweep; regenerate the map at %s.",
 				name, doc.SHA, pinnedSHA, pinnedSHA)

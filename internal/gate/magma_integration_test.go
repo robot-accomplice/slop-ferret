@@ -48,7 +48,11 @@ func TestRealMagmaEnvelopeIsFullyConsumed(t *testing.T) {
 		"main.go":                "package main\n\nfunc main() { used() }\n\nfunc used() {}\n\nfunc orphan() {}\n",
 		"internal/wallet/pay.go": "package wallet\n\nfunc Pay() {}\n",
 	})
-	sha := strings.TrimSpace(runOut(t, repo, "rev-parse", "--short", "HEAD"))
+	// The FULL 40-char object name, as a user pins with `git rev-parse HEAD`. magma stamps a 7-char
+	// abbreviation, so this exercises the abbreviation-tolerant compare on real producer output. It
+	// was written as `--short` and so agreed with the bug: both sides were 7 chars and equality
+	// passed, while every real full-length pin was refused with an impossible remedy.
+	sha := strings.TrimSpace(runOut(t, repo, "rev-parse", "HEAD"))
 
 	out := t.TempDir()
 	if b, err := exec.Command(magma, "--depth", "1", repo, "fixture", out).CombinedOutput(); err != nil {

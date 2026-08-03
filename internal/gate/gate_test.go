@@ -629,6 +629,45 @@ func TestAMapWithNoTreeFieldIsAccepted(t *testing.T) {
 	}
 }
 
+// A user pins the sweep with `git rev-parse HEAD` (40 chars); magma 0.2.0 stamps a 7-char
+// abbreviation. Raw `doc.SHA != pinnedSHA` refused every full-length pin and told the user to
+// "regenerate the map at <40-char sha>" — a remedy magma cannot satisfy, so a reviewer who ran the
+// prescribed remedy proved the loop infinite. The map's sha is a prefix of the pin; that must be
+// accepted. Break it: restore `doc.SHA != pinnedSHA` in loadMap and this goes red.
+func TestAFullLengthShaPinMatchesAnAbbreviatedMap(t *testing.T) {
+	const abbrev = "4f33b3c"                                // 7 chars, as magma 0.2.0 stamps
+	const full = "4f33b3c9a1e04b2d7c6f0a8e5b3d2c1f0a9e8d7c" // 40 chars; abbrev is its prefix
+	m := writeMap(t, abbrev, "codemap-rows/1", "rta", true, nil)
+	if _, err := BuildPlan(m, full, gitRepo(t, map[string]string{"a.go": "package a\n"}), ""); err != nil {
+		t.Fatalf("a full-length pin whose abbreviation the map carries must be accepted: %v", err)
+	}
+}
+
+// The counterfactual that keeps the tolerance honest: a same-length pin that shares no prefix with
+// the map's sha must still refuse, or "abbreviation-tolerant" rots into "accept anything". Break it:
+// make shaMatches return true unconditionally and this goes red.
+func TestAShaThatIsNotAnAbbreviationOfThePinIsRefused(t *testing.T) {
+	m := writeMap(t, "4f33b3c", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+		gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+	if err == nil || code(err) != ExitRefused {
+		t.Fatalf("a map describing a different tree must be refused, not tolerated: err=%v", err)
+	}
+}
+
+// A one-character "sha" must not prefix-match a real 40-char pin: abbreviation tolerance requires a
+// genuine abbreviation (>= minSHAAbbrev), not any shared leading character, or a truncated/garbage
+// pin silently matches an unrelated tree. Break it: drop the length floor in shaMatches and this
+// goes red.
+func TestATruncatedShaDoesNotLooseMatch(t *testing.T) {
+	m := writeMap(t, "4", "codemap-rows/1", "rta", true, nil)
+	_, err := BuildPlan(m, "4f33b3c9a1e04b2d7c6f0a8e5b3d2c1f0a9e8d7c",
+		gitRepo(t, map[string]string{"a.go": "package a\n"}), "")
+	if err == nil || code(err) != ExitRefused {
+		t.Fatalf("a 1-char map sha must not match a 40-char pin: err=%v", err)
+	}
+}
+
 // A REFUSED MAP MUST NOT READ AS A CLEAN ONE.
 //
 // magma distinguishes rows:null (the analysis could not run) from rows:[] (it ran and found
