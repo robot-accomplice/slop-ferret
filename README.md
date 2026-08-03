@@ -51,17 +51,8 @@ silently be reused.
 
 ## Install
 
-**No tag is published yet**, so neither `@v0.1.0` nor `@latest` resolves to a usable build today:
-`@latest` follows the default branch, which does not contain `cmd/ferret`. Until the first release,
-build from `develop`:
-
-```bash
-git clone -b develop https://github.com/robot-accomplice/slop-ferret.git
-cd slop-ferret && just install && ferret install
-```
-
-Once a release exists, pinning is the recommended path — a pinned version is reproducible and
-reviewable, and semver tags are published so that anyone who prefers to pin can:
+Pinning is the recommended path — a pinned version is reproducible and reviewable, and semver tags
+are published so anyone who prefers to pin can:
 
 ```bash
 go install github.com/robot-accomplice/slop-ferret/cmd/ferret@v0.1.0   # pinned (recommended)
