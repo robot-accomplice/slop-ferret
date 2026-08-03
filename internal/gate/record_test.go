@@ -392,3 +392,39 @@ func TestARecordWrittenNowReadsBack(t *testing.T) {
 		t.Fatalf("round-trip lost data: %+v", recs)
 	}
 }
+
+// The key moved from origin-derived to root-commit-derived, which ORPHANED every record an older
+// binary wrote. `ferret records` then printed nothing at all against a store holding five of them
+// — the same "absence rendered as a value" defect the schema field was added to fix, reintroduced
+// by the fix for the key. Silence is the one answer a records listing must never give when there
+// are records.
+func TestRecordsFromTheOldOriginKeyAreReportedNotSilentlyOrphaned(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	repo := gitRepo(t, map[string]string{"a.go": "package a\n"})
+	run(t, repo, "remote", "add", "origin", "https://github.com/robot-accomplice/ghola.git")
+
+	// Exactly where the previous binary would have put it.
+	old := filepath.Join(home, ".slop-ferret", "records", "github.com", "robot-accomplice", "ghola")
+	must(t, os.MkdirAll(old, 0o755))
+	must(t, os.WriteFile(filepath.Join(old, "4f33b3c.json"), []byte(`{"sha":"4f33b3c"}`), 0o644))
+
+	recs, err := ListRecords(repo)
+	if len(recs) != 0 {
+		t.Fatalf("an origin-keyed record must not be read as current: %+v", recs)
+	}
+	if err == nil {
+		t.Fatal("a store holding records must not list as empty — that is indistinguishable " +
+			"from a repository nobody has ever swept")
+	}
+	if !strings.Contains(err.Error(), old) {
+		t.Errorf("the report must name where they actually are: %v", err)
+	}
+}
+
+func must(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}

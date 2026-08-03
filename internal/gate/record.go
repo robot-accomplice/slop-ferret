@@ -283,16 +283,31 @@ func ListRecords(repo string) ([]Record, error) {
 	}
 	dir := filepath.Join(root, filepath.FromSlash(key))
 	entries, err := os.ReadDir(dir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
+	// A repository that has never been swept returns nothing and no error -- a normal state. But
+	// the "no records here" path must still run the legacy-location check below, or a store that
+	// HAS records simply looks empty.
 	wantRootLines, _ := gitLines(repo, "rev-list", "--max-parents=0", "--reverse", "HEAD")
 	wantRoot := strings.Join(wantRootLines, ",")
 	var out []Record
 	var legacy []error
+	// The key moved from origin-derived to root-commit-derived, so records written by an older
+	// binary sit in a directory nothing looks in any more. Returning nothing while five records
+	// exist on disk is the same "absence rendered as a value" defect this store was just fixed
+	// for -- so the old location is checked and REPORTED, exactly once, rather than left silent.
+	if o := originURL(repo); o != "" {
+		if old := filepath.Join(root, filepath.FromSlash(safeKey(o))); old != dir {
+			if ents, err := os.ReadDir(old); err == nil && len(ents) > 0 {
+				legacy = append(legacy, fmt.Errorf("%d record(s) from an older binary are at %s, "+
+					"keyed on the origin URL. The key is derived from the repository's root "+
+					"commits now, because an origin is configuration and could be asserted by the "+
+					"repo being audited. They are not readable as current records; re-sweep, or "+
+					"read them directly", len(ents), old))
+			}
+		}
+	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
