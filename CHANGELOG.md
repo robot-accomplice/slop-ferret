@@ -4,12 +4,13 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project will use [semantic versioning](https://semver.org/) once it has a release.
 
-## [Unreleased]
+## [0.1.0] - 2026-08-03
 
-**Nothing is released. Two go/no-go ship reviews have been run and both returned NO-GO** — see
-[`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md) for the first. The second (five
-stations, 2026-08-02) found the remediation for the first had not bound: the tests written to pin
-its two headline defects both still passed under mutation of those exact defects.
+First release. It follows three go/no-go ship reviews. The first two returned NO-GO
+([`docs/releases/v0.1.0-abort.md`](docs/releases/v0.1.0-abort.md)) because the remediation for each
+had not bound — the tests written to pin the headline defects still passed under mutation of those
+exact defects. The third returned GO once every fix was re-verified by mutation
+([`docs/releases/v0.1.0-mutation.md`](docs/releases/v0.1.0-mutation.md)).
 
 Every fix listed below was verified by breaking it and observing the test fail. That is the
 process change, not a claim about care: twice a remediation was reported complete while its
@@ -43,8 +44,23 @@ failure mode.
   while rendering as the least.
 - `.slop-h-signals` is bounded (500 signals / 256 KiB): it comes from the audited repo and
   matching is O(files x signals).
-- Plans record `vocab_provenance`, so a sweep run against a half-loaded lexicon is distinguishable
-  after the fact from one over a repo that genuinely matched nothing.
+- Plans record `vocab_provenance`, carried into the sweep record, so a sweep run against a
+  half-loaded lexicon is distinguishable after the fact from one over a repo that genuinely matched
+  nothing. The report's lexicon label is computed from what `ferret plan` loaded, not typed into the
+  findings file.
+- `ferret plan` accepts a full-length `git rev-parse HEAD` pin against magma's abbreviated map sha.
+  Raw string equality refused every full-length pin and prescribed regenerating the map at a 40-char
+  sha magma never emits — an instruction that looped forever, blocking any user who followed the
+  README.
+- Plan and discharge JSON reject unknown fields. A mistyped key (`read_path` for `read_paths`)
+  silently read back as nothing, so the sweep reported zero of whatever it carried, with no error.
+- The report never shows a family as both run and not-run: the auditor's `families_run` is
+  reconciled against the enumeration's derived not-run set, which wins.
+- The report's near-misses and checked-clean guarantees are reachable — the discharge's optional
+  attested fields are documented in the plan's `instructions`, the machine-readable definition of
+  the discharge that was lost when the `discharge` command was removed.
+- `SECURITY.md`'s "full set" of git subcommands run against a target matches the code (it was short
+  the two root-commit probes), and the release dry-run builds exactly the platform set that ships.
 
 ### Added
 - **Sweep records** — `ferret enumerate … <repo>` writes `~/.slop-ferret/records/<repo>/<sha>.json`;
