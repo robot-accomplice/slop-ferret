@@ -92,7 +92,8 @@ Fix by comparing on the shorter length (abbreviation-tolerant), not by documenti
 
 ### 2. `README.md:71` sends users to `develop` — BLOCKING
 
-`develop` still has `ferret discharge` and the 2-arg `report`. The install section rewritten to fix
+`develop` still has `ferret discharge` and the 2-arg `report`. The install section rewritten to fix <!-- staleprose:allow -->
+<!-- (this note accurately describes a retired command; it is a working note, deleted at release) -->
 "no documented path works" now points at a binary whose command set contradicts the README that sent
 them there. `CONTRIBUTING.md:19` has the same defect. Neither can be right until this branch merges.
 
@@ -104,7 +105,7 @@ names appear in **no** artifact an auditor reads — verified: zero occurrences 
 "near-misses are shown" and "checked-clean carries its method" as guarantees. Both are unsatisfiable
 from any documented input.
 
-Deleting `ferret discharge` removed the only machine-readable definition of the discharge shape. The
+Deleting `ferret discharge` removed the only machine-readable definition of the discharge shape. The <!-- staleprose:allow -->
 `instructions` string in `plan.json` documents the enumerate-facing fields only.
 
 ### 4. Regressions introduced by this round's own changes
