@@ -50,25 +50,32 @@ silently be reused.
 
 ## Install
 
-Pinning is the recommended path — a pinned version is reproducible and reviewable, and semver tags
-are published so anyone who prefers to pin can:
+```bash
+curl -fsSL https://raw.githubusercontent.com/robot-accomplice/slop-ferret/main/install.sh | sh
+```
+
+Downloads the released binary for your platform, **verifies its sha256 against the release's
+`checksums.txt`**, installs it, and deploys the skill. Pin a release with `VERSION=v0.1.0` and choose
+where the binary lands with `BINDIR=~/bin` (default: `/usr/local/bin`, falling back to
+`~/.local/bin`). macOS and Linux, amd64/arm64.
+
+Prefer to let Go manage it, or build from source? That works too — but you must run `ferret install`
+yourself afterwards, which the script does for you:
 
 ```bash
-go install github.com/robot-accomplice/slop-ferret/cmd/ferret@v0.1.0   # pinned (recommended)
-go install github.com/robot-accomplice/slop-ferret/cmd/ferret@latest   # tracks the latest tag
+go install github.com/robot-accomplice/slop-ferret/cmd/ferret@v0.1.0
 ferret install
 ```
 
 `ferret install` is **required, not optional**: the H-signal vocabulary lives in the deployed
 lexicon, not in the binary. Without it `ferret plan` refuses rather than handing back an empty
 worklist. Run `ferret doctor` afterwards — it checks the deployment on its own, with no network.
+`install` deploys the skill into `~/.claude/skills/slop-ferret/` and writes **both** command entries
+(`/slop-ferret` and `/slop-ferret:report`).
 
 **macOS and Linux only.** Windows builds are not published: `install` creates symlinks, which needs
 privilege or developer mode on Windows, and no Windows path in this tool has ever been executed.
 Publishing a binary nobody has run is the failure class this project exists to find.
-
-`install` deploys the skill into `~/.claude/skills/slop-ferret/` and writes **both** command
-entries (`/slop-ferret` and `/slop-ferret:report`).
 
 ## Usage
 
