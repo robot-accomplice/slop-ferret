@@ -123,8 +123,15 @@ func run(argv []string, stdout, stderr io.Writer) int {
 			if len(sha) > 12 {
 				sha = sha[:12]
 			}
-			fmt.Fprintf(stdout, "%s  %s  stated-read %s  plan %s  %s\n",
-				r.Date, sha, r.AttestedRepo, r.AttestedPlan, r.Accounting)
+			// The store is keyed by root commit now, so the directory name is a hash. The origin
+			// is printed here instead — readable where a human actually reads it, and recorded
+			// rather than trusted: it never places the record.
+			origin := r.Origin
+			if origin == "" {
+				origin = "(no remote)"
+			}
+			fmt.Fprintf(stdout, "%s  %s  stated-read %s  plan %s  %s  %s\n",
+				r.Date, sha, r.AttestedRepo, r.AttestedPlan, r.Accounting, origin)
 		}
 		return gate.ExitOK
 	case "doctor":

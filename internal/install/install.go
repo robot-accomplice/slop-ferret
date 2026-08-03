@@ -319,6 +319,19 @@ func Doctor(w io.Writer, src Source, binVersion string) int {
 			problems = append(problems,
 				"no install manifest — the deployed skill was not installed by this tool")
 		}
+		// SOURCE-INDEPENDENT CHECKS FIRST. Everything below this used to run through classify(),
+		// which compares against the SOURCE — so with no source reachable it iterated an empty
+		// list, found nothing, and doctor printed "ok". That is the DEFAULT path for a `go
+		// install`ed binary offline, and for everyone right now, since DefaultSource resolves a tag
+		// that does not exist yet. Deleting the lexicon outright and running doctor returned
+		// "ok — deployed copy matches the binary, both commands resolve", while SKILL.md Step 0.1
+		// names doctor as the enforcement of its own stop condition ("a missing file is exactly
+		// what it reports").
+		//
+		// The manifest already records what was installed and its hashes. That is enough to detect
+		// deletion and in-place editing with no source at all.
+		problems = append(problems, deploymentSelfCheck(p)...)
+
 		st, err := classify(p, src)
 		if err != nil {
 			fmt.Fprintf(w, "ferret: %v\n", err)
@@ -416,4 +429,51 @@ func linkAll(p paths, force bool) (int, error) {
 		made = append(made, link)
 	}
 	return 0, nil
+}
+
+// lexiconRel is the one deployed file the BINARY depends on to do its job: gate.loadSignals reads
+// its fenced h-signals block. A deployment missing it produces sweeps that enumerate nothing.
+const lexiconRel = "references/ai-slop-lexicon.md"
+
+// deploymentSelfCheck reports what is wrong with the deployed tree WITHOUT consulting a source.
+// "I could not reach a source" and "the deployment is broken" are different findings, and
+// conflating them is what let doctor certify a lexicon-less install as ok.
+func deploymentSelfCheck(p paths) []string {
+	var problems []string
+
+	// The manifest is this tool's own record of what it wrote. Anything in it that is gone, or
+	// whose bytes changed, is a fact about the deployment alone.
+	for rel, want := range readManifest(p).Files {
+		got, err := os.ReadFile(filepath.Join(p.dest, filepath.FromSlash(rel)))
+		if err != nil {
+			problems = append(problems, fmt.Sprintf(
+				"DELETED since install: %s (this tool wrote it; it is no longer there)", rel))
+			continue
+		}
+		if hashBytes(got) != want {
+			problems = append(problems, fmt.Sprintf(
+				"edited in place since install: %s (your change is NOT in the repo)", rel))
+		}
+	}
+
+	// The lexicon is checked for CONTENT, not just presence, because the failure that matters is a
+	// deployed lexicon whose h-signals fence is missing or renamed: `ferret plan` then loads zero
+	// signals. An older lexicon that predates the fence is indistinguishable from no lexicon at
+	// all, and a sweep run against either enumerates nothing while looking like a real one.
+	lex := filepath.Join(p.dest, filepath.FromSlash(lexiconRel))
+	b, err := os.ReadFile(lex)
+	switch {
+	case err != nil:
+		problems = append(problems, fmt.Sprintf(
+			"the lexicon is missing: %s — every sweep from this deployment enumerates an empty "+
+				"worklist, which reports the same as a clean repository", lex))
+	case !strings.Contains(string(b), "```h-signals"):
+		problems = append(problems, fmt.Sprintf(
+			"the lexicon has no ```h-signals block: %s — the H vocabulary loads from that fence, "+
+				"so this deployment produces sweeps with no vocabulary. It is probably older than "+
+				"this binary; run `ferret update`", lex))
+	}
+
+	sort.Strings(problems)
+	return problems
 }

@@ -67,25 +67,72 @@ func TestWriteRecordThenListRoundTrips(t *testing.T) {
 	}
 }
 
-func TestRepoKeyPrefersTheOriginURL(t *testing.T) {
+// REPLACED 2026-08-03. These two tests used to assert that RepoKey PREFERRED the origin URL and
+// fell back to a path hash. Both asserted the defect (ABORT II, A2): `origin` is configuration, so
+// it is neither stable across checkouts nor beyond the audited repository's control.
+//
+// The store on the operator's disk proved the first half — it held one repository under two keys,
+// `Users/jmachen/code/slop-ferret/` and `github.com/robot-accomplice/slop-ferret/`, with disjoint
+// histories, so a second sweep could not see the first.
+func TestRepoKeyIsStableWhenTheOriginChanges(t *testing.T) {
 	repo := gitRepo(t, map[string]string{"a.go": "package a\n"})
-	run(t, repo, "remote", "add", "origin", "https://github.com/robot-accomplice/ghola.git")
-	key, err := RepoKey(repo)
+	before, err := RepoKey(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if key != "github.com/robot-accomplice/ghola" {
-		t.Errorf("RepoKey = %q", key)
+	run(t, repo, "remote", "add", "origin", "https://github.com/robot-accomplice/ghola.git")
+	after, err := RepoKey(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(t, repo, "remote", "set-url", "origin", "git@github.com:someone/else.git")
+	moved, err := RepoKey(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before != after || after != moved {
+		t.Errorf("the key moved when the remote did (%q -> %q -> %q). A repository that changes "+
+			"host, or is cloned twice, must not lose its own sweep history", before, after, moved)
 	}
 }
 
-func TestRepoKeyFallsBackForARemotelessRepo(t *testing.T) {
-	key, err := RepoKey(gitRepo(t, map[string]string{"a.go": "package a\n"}))
+// The forgery half. A repository's `origin` is an unauthenticated string IT controls, and this tool
+// is pointed at repositories you have reason to distrust. Claiming a victim's URL must not place a
+// record in the victim's directory, because SKILL.md Step 0.2 tells the next sweep to read
+// `checked_clean` there and not re-spend budget on it.
+func TestAHostileOriginCannotReachAnotherRepositorysRecords(t *testing.T) {
+	victim := gitRepo(t, map[string]string{"real.go": "package v\n"})
+	run(t, victim, "remote", "add", "origin", "https://github.com/robot-accomplice/counterspy.git")
+	victimKey, err := RepoKey(victim)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(key, "path-") {
-		t.Errorf("RepoKey = %q, want a path- fallback", key)
+
+	hostile := gitRepo(t, map[string]string{"evil.go": "package h\n"})
+	run(t, hostile, "remote", "add", "origin", "https://github.com/robot-accomplice/counterspy.git")
+	hostileKey, err := RepoKey(hostile)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if hostileKey == victimKey {
+		t.Fatalf("a repository that merely CLAIMS another's origin got its key (%q). Records are "+
+			"durable input to a later sweep: this is a write primitive into another project's "+
+			"audit history", hostileKey)
+	}
+}
+
+// The fallback is for a repository with no commits to key on. It must still be usable rather than
+// unrecordable, and must announce which method produced it -- the fallback is genuinely weaker.
+func TestAnUnbornRepoFallsBackToThePathAndSaysSo(t *testing.T) {
+	d := t.TempDir()
+	run(t, d, "init", "-q")
+	key, method, err := repoIdentity(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(key, "path-") || method != "absolute-path" {
+		t.Errorf("key=%q method=%q, want a path- fallback naming itself", key, method)
 	}
 }
 

@@ -61,16 +61,22 @@ type Record struct {
 	// A record is durable input to a future sweep. Reading one whose shape you do not recognise and
 	// rendering the gaps as blanks is the same defect as reporting an unperformed audit: absence
 	// displayed as a value.
-	Schema        int    `json:"schema"`
-	SHA           string `json:"sha"`
-	Date          string `json:"date"`
-	AttestedRepo  string `json:"attested_repo"`
-	AttestedPlan  string `json:"attested_plan"`
-	Denominator   int    `json:"denominator"`
-	Waived        int    `json:"waived"`
-	WorklistSize  int    `json:"worklist_size"`
-	UnmatchedSize int    `json:"unmatched_size"`
-	Accounting    string `json:"accounting"`
+	Schema int `json:"schema"`
+	// Origin and RootCommit are the repository's PROVENANCE, recorded so a reader can tell what
+	// this record describes. RootCommit is also the key's input, so a record whose recorded root
+	// disagrees with the repo being listed is refused rather than shown.
+	Origin         string `json:"origin,omitempty"`
+	RootCommit     string `json:"root_commit,omitempty"`
+	IdentityMethod string `json:"identity_method,omitempty"`
+	SHA            string `json:"sha"`
+	Date           string `json:"date"`
+	AttestedRepo   string `json:"attested_repo"`
+	AttestedPlan   string `json:"attested_plan"`
+	Denominator    int    `json:"denominator"`
+	Waived         int    `json:"waived"`
+	WorklistSize   int    `json:"worklist_size"`
+	UnmatchedSize  int    `json:"unmatched_size"`
+	Accounting     string `json:"accounting"`
 
 	Tier              string         `json:"tier,omitempty"`
 	FamiliesNotRun    []string       `json:"families_not_run,omitempty"`
@@ -97,43 +103,67 @@ func recordsRoot() (string, error) {
 	return filepath.Join(home, ".slop-ferret", "records"), nil
 }
 
-// RepoKey derives the records-store key for a repository. The result is SAFE BY CONSTRUCTION —
-// it is reduced to plain path segments here rather than at the call site, because it is exported
-// and derived from the AUDITED repository's origin URL. The origin URL is preferred because a
-// path changes when the tree moves and the records would then look like a different repo's; the
-// hash fallback keeps remoteless repos usable rather than unrecordable.
+// RepoKey derives the records-store key for a repository, from ITS ROOT COMMITS.
 //
-// IT IS NOT A STABLE IDENTITY, and two KNOWN OPEN defects follow from that (ABORT II, A2):
+// It used to key on `git remote get-url origin`, and that was wrong in both directions (ABORT II,
+// A2):
 //
-//  1. It is not stable. The operator's own store holds `Users/jmachen/code/slop-ferret/` and
-//     `github.com/robot-accomplice/slop-ferret/` — one repository, two keys, disjoint histories,
-//     because `origin` differed between runs.
-//  2. It is target-asserted. `origin` is an unauthenticated string the audited repo controls, so
-//     any fork can write `checked_clean` claims into the upstream's directory, which SKILL.md
-//     Step 0.2 then tells the next sweep not to re-spend budget on. `cat-file -e` binds nothing:
-//     a fork contains the upstream's commits by definition.
+//  1. NOT STABLE. `origin` is configuration, so it differs between checkouts of one repository.
+//     The operator's own store held both `Users/jmachen/code/slop-ferret/` and
+//     `github.com/robot-accomplice/slop-ferret/` — one repo, two keys, two disjoint histories, so
+//     the second sweep could not see the first and the store silently failed at its only job.
+//  2. TARGET-ASSERTED. `origin` is an unauthenticated string the AUDITED repository controls, and
+//     this tool exists to be pointed at repositories you have reason to distrust. Any repo could
+//     set it to a victim's URL and write `checked_clean` claims into that victim's directory —
+//     claims SKILL.md Step 0.2 then tells the next sweep not to re-spend budget on. The
+//     `cat-file -e` check bound nothing, because a fork contains the upstream's commits anyway.
 //
-// Fixing this needs an identity the target cannot assert, plus the observed origin stored INSIDE
-// the record so a disagreeing key can be refused. Until then, treat a record's provenance as a
-// hint, not a fact.
+// A root commit cannot be asserted by configuration: you either have that history or you do not.
+// It is also invariant under moving, renaming, re-cloning and re-homing the remote, which is what
+// the origin URL was reaching for and failed to provide.
+//
+// The observed origin is recorded INSIDE the record for display, never used to place it. That
+// costs directory readability — the store is keyed by hash now — and buys an identity that is
+// stable and unforgeable. `ferret records` prints the origin, so the readable name is still there
+// where a human actually reads it.
 func RepoKey(repo string) (string, error) {
-	out, err := gitLines(repo, "remote", "get-url", "origin")
-	if err == nil && len(out) > 0 {
-		u := strings.TrimSuffix(out[0], ".git")
-		if strings.HasPrefix(u, "git@") {
-			u = strings.Replace(strings.TrimPrefix(u, "git@"), ":", "/", 1)
-		}
-		u = strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
-		if u != "" {
-			return safeKey(u), nil
+	id, _, err := repoIdentity(repo)
+	return id, err
+}
+
+// repoIdentity returns the key and how it was derived. The method is recorded because the fallback
+// is genuinely weaker and a reader must be able to tell which one they are looking at.
+func repoIdentity(repo string) (key, method string, err error) {
+	// --reverse for a deterministic order: a repository with several root commits (a merged
+	// history) must not key differently depending on git's traversal.
+	if roots, e := gitLines(repo, "rev-list", "--max-parents=0", "--reverse", "HEAD"); e == nil && len(roots) > 0 {
+		// A shallow clone's "root" is a graft boundary that moves when the depth changes, so it is
+		// not an identity. Fall through rather than mint a key that changes under the caller.
+		if sh, e := gitLines(repo, "rev-parse", "--is-shallow-repository"); e != nil ||
+			len(sh) == 0 || strings.TrimSpace(sh[0]) != "true" {
+			s := sha256.Sum256([]byte(strings.Join(roots, "\n")))
+			return "root-" + hex.EncodeToString(s[:])[:12], "root-commit", nil
 		}
 	}
 	abs, err := filepath.Abs(repo)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	s := sha256.Sum256([]byte(abs))
-	return safeKey("path-" + hex.EncodeToString(s[:])[:8]), nil
+	return "path-" + hex.EncodeToString(s[:])[:12], "absolute-path", nil
+}
+
+// originURL is recorded for display only. It is deliberately NOT part of the key: see RepoKey.
+func originURL(repo string) string {
+	out, err := gitLines(repo, "remote", "get-url", "origin")
+	if err != nil || len(out) == 0 {
+		return ""
+	}
+	u := strings.TrimSuffix(out[0], ".git")
+	if strings.HasPrefix(u, "git@") {
+		u = strings.Replace(strings.TrimPrefix(u, "git@"), ":", "/", 1)
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
 }
 
 // safeKey reduces a key to path segments that cannot escape. `..` and empty segments are dropped
@@ -215,9 +245,12 @@ func WriteRecord(repo string, pl *Plan, dis *Discharge, res *Result) (string, er
 		}
 	}
 
+	_, method, _ := repoIdentity(repo)
+	roots, _ := gitLines(repo, "rev-list", "--max-parents=0", "--reverse", "HEAD")
 	rec := Record{
 		Schema: RecordSchema,
-		SHA:    pl.SHA, Date: date,
+		Origin: originURL(repo), RootCommit: strings.Join(roots, ","), IdentityMethod: method,
+		SHA: pl.SHA, Date: date,
 		AttestedRepo: res.Attested.Repo, AttestedPlan: res.Attested.Plan,
 		Denominator: pl.ProductionTotal, Waived: res.Attested.Waived,
 		WorklistSize: len(pl.HWorklist), UnmatchedSize: len(pl.HUnmatched),
@@ -256,6 +289,8 @@ func ListRecords(repo string) ([]Record, error) {
 	if err != nil {
 		return nil, err
 	}
+	wantRootLines, _ := gitLines(repo, "rev-list", "--max-parents=0", "--reverse", "HEAD")
+	wantRoot := strings.Join(wantRootLines, ",")
 	var out []Record
 	var legacy []error
 	for _, e := range entries {
@@ -275,6 +310,16 @@ func ListRecords(repo string) ([]Record, error) {
 		// gets told instead.
 		if r.Schema != RecordSchema {
 			legacy = append(legacy, &ErrLegacyRecord{Path: filepath.Join(dir, e.Name())})
+			continue
+		}
+		// The key is derived from the root commits, so a record sitting under this key whose
+		// recorded root disagrees did not come from this repository. Belt and braces against a
+		// hand-placed or migrated file: the directory says one thing, the record says another, and
+		// the safe reading of a contradiction is to trust neither.
+		if r.RootCommit != "" && wantRoot != "" && r.RootCommit != wantRoot {
+			legacy = append(legacy, fmt.Errorf("%s claims root commit %s but this repository's is "+
+				"%s — refusing to report a record that describes a different history",
+				filepath.Join(dir, e.Name()), r.RootCommit, wantRoot))
 			continue
 		}
 		out = append(out, r)

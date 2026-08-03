@@ -114,7 +114,7 @@ func fakeCheckout(t *testing.T) string {
 		"skill/SKILL.md":                       "# skill\n",
 		"skill/VERSION":                        `{"version":"2026-08-01.8"}`,
 		"skill/commands/slop-ferret-report.md": "# report\n",
-		"skill/references/ai-slop-lexicon.md":  "# lexicon\n",
+		"skill/references/ai-slop-lexicon.md":  "# lexicon\n\n```h-signals\nmoney/value: pay|wallet\n```\n",
 	} {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {

@@ -959,3 +959,42 @@ func TestOnlyTheFencedBlockIsRead(t *testing.T) {
 		t.Fatalf("only the fenced block is a signal source: %+v", got)
 	}
 }
+
+// `.slop-h-signals` comes from the repository being audited, and matching is O(files x signals), so
+// its size is a cost the TARGET controls. Measured: 2,000 signals over 2,000 paths took 59.9s; a
+// committed 100k-line file is hours. Refuse loudly rather than truncate — silently reading the
+// first N would make the worklist depend on line order.
+func TestAnOversizedSignalFileIsRefused(t *testing.T) {
+	for _, c := range []struct{ name, body, want string }{
+		{"too many signals", strings.Repeat("money/value: pay\n", maxSignalLines+1), "over the cap"},
+		{"too many bytes", "money/value: " + strings.Repeat("a|", maxSignalFileBytes/2+1) + "b\n",
+			"over the"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			repo := gitRepo(t, map[string]string{
+				"internal/wallet/pay.go": "package p\n",
+				".slop-h-signals":        c.body,
+			})
+			m := writeMap(t, "abc123", "codemap-rows/1", "rta", true, nil)
+			_, err := BuildPlan(m, "abc123", repo, "")
+			if err == nil {
+				t.Fatal("an unbounded signal file from the audited repo must be refused")
+			}
+			if code(err) != ExitRefused || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("code=%d err=%v", code(err), err)
+			}
+		})
+	}
+}
+
+// The cap must not break ordinary use: a handful of project-specific signals is the feature.
+func TestAModestSignalFileStillWorks(t *testing.T) {
+	repo := gitRepo(t, map[string]string{
+		"internal/widget/shape.go": "package w\n",
+		".slop-h-signals":          "domain/widget: widget\n",
+	})
+	p := planFor(t, repo)
+	if len(p.HWorklist) == 0 {
+		t.Fatal("a repo-supplied signal must still enumerate")
+	}
+}

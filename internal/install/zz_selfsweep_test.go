@@ -137,3 +137,51 @@ func TestNoInstallShapeCanWriteASubset(t *testing.T) {
 		})
 	}
 }
+
+// DOCTOR MUST NOT NEED A SOURCE TO SEE A BROKEN DEPLOYMENT.
+//
+// Every check used to run through classify(), which compares the deployment against the SOURCE —
+// so with nothing reachable it iterated an empty list and printed "ok — deployed copy matches the
+// binary, both commands resolve". Deleting the lexicon outright still returned ok, exit 0. That is
+// the DEFAULT path for a `go install`ed binary offline, and for everyone today, since the default
+// source resolves a tag that does not exist.
+//
+// SKILL.md Step 0.1 names doctor as the enforcement of its own stop condition — "a missing file is
+// exactly what it reports" — and Step 0.1b makes a non-zero exit the stop. Both were prose the code
+// did not back.
+func TestDoctorSeesABrokenDeploymentWithNoSourceReachable(t *testing.T) {
+	cases := []struct {
+		name, want string
+		breakIt    func(t *testing.T, home string)
+	}{
+		{"lexicon deleted", "lexicon is missing", func(t *testing.T, home string) {
+			must(t, os.Remove(filepath.Join(dest(home), "references", "ai-slop-lexicon.md")))
+		}},
+		{"lexicon has no h-signals fence", "no ```h-signals block", func(t *testing.T, home string) {
+			must(t, os.WriteFile(filepath.Join(dest(home), "references", "ai-slop-lexicon.md"),
+				[]byte("# an older lexicon, from before the fence\n"), 0o644))
+		}},
+		{"SKILL.md deleted", "DELETED since install", func(t *testing.T, home string) {
+			must(t, os.Remove(filepath.Join(dest(home), "SKILL.md")))
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			home, src, out := setup(t)
+			if code := Install(out, src, false); code != 0 {
+				t.Fatalf("setup install failed: %s", out)
+			}
+			c.breakIt(t, home)
+
+			out.Reset()
+			// The zero Source is the point: nothing to compare against.
+			code := Doctor(out, Source{}, "test-bin")
+			if code == 0 {
+				t.Errorf("doctor returned ok on a broken deployment with no source: %s", out)
+			}
+			if !strings.Contains(out.String(), c.want) {
+				t.Errorf("doctor must name the problem (%q): %s", c.want, out)
+			}
+		})
+	}
+}
