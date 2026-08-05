@@ -9,6 +9,8 @@ sequenceDiagram
     participant SF as slop-ferret
     participant A as Sweeping agent
     participant R as Target repo
+    participant Arch as architext-cli
+    participant AV as architext-viewer
 
     Op->>M: magma --depth 1 <repo> <name> ~/.slop-ferret/maps
     M->>R: parse (RTA reachability)
@@ -29,7 +31,18 @@ sequenceDiagram
 
     Op->>SF: ferret enumerate plan.json discharge.json
     SF-->>A: attested.repo, attested.plan, remaining[], exit 0|3
+
+    Op->>Arch: architext slop-ferret . --plan plan.json --discharge discharge.json --findings findings.json
+    Arch->>SF: ferret enumerate --no-record plan.json discharge.json
+    Arch->>Arch: build slop-ferret.json + register in manifest
+    Arch-->>Op: docs/architext/data/slop-ferret.json
+
+    Op->>Arch: architext serve .
+    Arch-->>AV: /data/slop-ferret.json
+    AV-->>Op: Slop Ferret mode (coverage + findings)
 ```
+
+Where **Arch** is `architext-cli` and **AV** is `architext-viewer`.
 
 ## Where each number comes from
 
