@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project will use [semantic versioning](https://semver.org/) once it has a release.
 
+## [0.1.1] - 2026-08-07
+
+Patch release. The skill prose shipped in 0.1.0 had been edited in place on a deployed copy and
+never made it back here, so a reinstall would have discarded it. `ferret doctor` is what caught it,
+in the direction that matters: the deployed copy was the NEWER one.
+
+### Fixed
+- **Restored two pieces of guidance that existed only on a deployed copy.** `SKILL.md` now carries
+  the 2026-08-05 correction that magma stamps a full 40-char `sha` since its PR #36, and that a
+  dirty tree becomes `<sha>+<diffhash>` while `tree` stays `<sha>-dirty`, so `ferret plan` catches
+  both shapes. The restored text keeps the warning attached: magma implementing that exact form for
+  independent reasons does not vindicate the earlier claim that it already did.
+- **Restored "rebuild `ferret` before trusting a refusal".** A 2026-08-05 sweep filed a tool bug
+  against `ferret plan` for rejecting a full-length sha; the fix had been in source 18 hours and the
+  installed binary was two days stale. The skill already warned that a stale local install is
+  indistinguishable from a hallucinated package — nobody had applied it to `ferret` itself.
+
+Found while sweeping an unrelated repository, where `ferret doctor`'s non-zero exit is a stop
+condition. That sweep ran against the drifted skill and said so on the face of its report rather
+than recording a version it was not running.
+
 ## [0.1.0] - 2026-08-03
 
 First release. It follows three go/no-go ship reviews. The first two returned NO-GO

@@ -34,7 +34,7 @@ import (
 // binVersion is this binary's own version, and it is DELIBERATELY not the skill's. They were one
 // number while the skill was compiled in, which meant a lexicon wording change needed a binary
 // release to reach a sweep. Two artifacts, two cadences, two versions.
-const binVersion = "0.1.0"
+const binVersion = "0.1.1"
 
 const usage = `ferret — ferrets AI slop out of a repository
 
