@@ -1013,3 +1013,44 @@ func TestAModestSignalFileStillWorks(t *testing.T) {
 		t.Fatal("a repo-supplied signal must still enumerate")
 	}
 }
+
+// A SOURCE file dropped by the exclusion denylist must be ANNOUNCED, not silently removed from the
+// denominator. The stated guarantee — "an unsupported language cannot shrink the denominator without
+// saying so" — only ever held for unknown EXTENSIONS (production_unclassified). A KNOWN source file
+// in an unconventional path (hand-written JS under dist/, as dr-markdown's frontend/dist/src/app.js)
+// was dropped by notH with no trace, so the coverage fraction silently over-counted. ProductionFiles
+// now returns those as `excluded`. Break it: stop collecting excluded (or drop the sourceExt guard on
+// it) and this goes red.
+func TestSourceFilesExcludedByTheDenylistAreAnnounced(t *testing.T) {
+	find := func(xs []string, x string) bool {
+		for _, s := range xs {
+			if s == x {
+				return true
+			}
+		}
+		return false
+	}
+	repo := gitRepo(t, map[string]string{
+		"a.go":                     "package a\n",
+		"frontend/dist/src/app.js": "export const x = 1\n", // hand-written source under a dist/ path
+		"b_test.go":                "package a\n",
+		"README.md":                "# docs\n",
+	})
+	production, _, excluded, err := ProductionFiles(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !find(production, "a.go") {
+		t.Errorf("a.go must count as production: %v", production)
+	}
+	if find(production, "frontend/dist/src/app.js") {
+		t.Errorf("app.js under dist/ must not silently count as production: %v", production)
+	}
+	if !find(excluded, "frontend/dist/src/app.js") {
+		t.Errorf("a source file dropped by the denylist must be announced in `excluded`, not vanish "+
+			"from the accounting: %v", excluded)
+	}
+	if find(excluded, "README.md") {
+		t.Errorf("a non-source doc is not an excluded SOURCE file and should not be announced as one: %v", excluded)
+	}
+}

@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 this project will use [semantic versioning](https://semver.org/) once it has a release.
 
+## [0.1.2] - 2026-08-07
+
+Patch release. Closes a silent hole in the coverage denominator.
+
+### Fixed
+- **The denominator announces what it excludes.** A tracked file dropped by the exclusion
+  denylist (`test/`, `vendor/`, `dist/`, `generated/`, …) that nonetheless carries a source
+  extension is now reported in `plan.json` as `production_excluded`, instead of vanishing. The
+  stated guarantee — "a language this list omits lands in `production_unclassified`; absence
+  announces itself" — only ever held for unknown *extensions*. A *known* source file in an
+  unconventional path was dropped with no trace: a sweep of a desktop app found its largest,
+  most-changed file (hand-written JavaScript under `dist/`) missing from the coverage fraction,
+  which therefore silently over-counted. The plan's `instructions` now tell the sweeper to scan
+  `production_excluded` for source mislaid under a build path.
+
 ## [0.1.1] - 2026-08-07
 
 Patch release. The skill prose shipped in 0.1.0 had been edited in place on a deployed copy and
