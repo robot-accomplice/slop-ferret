@@ -223,13 +223,17 @@ type Plan struct {
 	ProductionTotal        int               `json:"production_total"`
 	ProductionFiles        []string          `json:"production_files"`
 	ProductionUnclassified []string          `json:"production_unclassified"`
-	HWorklist              []WorkItem        `json:"h_worklist"`
-	HRequired              []WorkItem        `json:"h_required"`
-	HDeferred              []WorkItem        `json:"h_deferred"`
-	HUnmatched             []string          `json:"h_unmatched"`
-	HUnmatchedChanges      []WorkItem        `json:"h_unmatched_changes"`
-	ChangeBaseline         string            `json:"change_baseline"`
-	Instructions           string            `json:"instructions"`
+	// ProductionExcluded is source-extension files the denylist dropped (build output, tests,
+	// vendored code) — announced, not silently removed, so a hand-written source file in an
+	// unconventional path (JS under dist/) can be caught rather than vanishing from the denominator.
+	ProductionExcluded []string   `json:"production_excluded"`
+	HWorklist          []WorkItem `json:"h_worklist"`
+	HRequired          []WorkItem `json:"h_required"`
+	HDeferred          []WorkItem `json:"h_deferred"`
+	HUnmatched         []string   `json:"h_unmatched"`
+	HUnmatchedChanges  []WorkItem `json:"h_unmatched_changes"`
+	ChangeBaseline     string     `json:"change_baseline"`
+	Instructions       string     `json:"instructions"`
 }
 
 type rowDoc struct {
@@ -346,14 +350,23 @@ func gitLines(repo string, args ...string) ([]string, error) {
 // ProductionFiles is the coverage universe: every tracked file that is production source.
 // `unclassified` is everything that survived the exclusion filter but carries no recognised
 // source extension — reported rather than dropped, so an unsupported language cannot shrink the
-// denominator without saying so.
-func ProductionFiles(repo string) (production, unclassified []string, err error) {
+// denominator without saying so. `excluded` closes the other half of that promise: a file the
+// denylist dropped that nonetheless LOOKS like source (a recognised extension under test/vendor/
+// dist/generated). Build output and tests belong there and are expected — but so did dr-markdown's
+// hand-written `frontend/dist/src/app.js`, the largest file in the release, which vanished from the
+// denominator with no trace and made the coverage fraction silently over-count. The excluded set is
+// announced so a human can catch a source file in an unconventional path; a doc (`.md`, `.json`)
+// dropped by the denylist is not source and is not listed.
+func ProductionFiles(repo string) (production, unclassified, excluded []string, err error) {
 	files, err := gitLines(repo, "ls-files", "-z")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	for _, f := range files {
 		if notH.MatchString(f) {
+			if sourceExt.MatchString(f) {
+				excluded = append(excluded, f)
+			}
 			continue
 		}
 		if sourceExt.MatchString(f) {
@@ -362,7 +375,7 @@ func ProductionFiles(repo string) (production, unclassified []string, err error)
 			unclassified = append(unclassified, f)
 		}
 	}
-	return production, unclassified, nil
+	return production, unclassified, excluded, nil
 }
 
 // enumerateWorklist ranks production paths by H signal. A signal match no longer decides whether
@@ -556,7 +569,10 @@ const instructions = "Read every h_required path — that tier is the floor and 
 	"`checked_clean`:[{class, method}] (a family recorded clean WITH the method that checked it; " +
 	"the method is not optional decoration — without it the next sweep cannot trust the claim), " +
 	"`findings_verified` and `findings_suspected` (counts), and `report_path` (where you wrote " +
-	"the HTML report)."
+	"the HTML report). Before you start, scan `production_excluded`: source files the denylist " +
+	"dropped from the denominator (build output, tests, vendored code). If one is hand-written " +
+	"source in an unconventional path — JS under `dist/`, say — the fraction is under-counting and " +
+	"you must read and count it by hand."
 
 // BuildPlan is `ferret plan`.
 func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
@@ -651,7 +667,7 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	production, unclassified, err := ProductionFiles(repo)
+	production, unclassified, excluded, err := ProductionFiles(repo)
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +721,8 @@ func BuildPlan(mapdir, pinnedSHA, repo, since string) (*Plan, error) {
 		MapLimitations:      limNames(dead.Limitations),
 		UnseededFamilies:    unseededFamilies, UnseededDetail: unseededDetail,
 		Candidates: cands, ProductionTotal: len(production), ProductionFiles: production,
-		ProductionUnclassified: nonNil(unclassified), HWorklist: nonNilW(work),
+		ProductionUnclassified: nonNil(unclassified), ProductionExcluded: nonNil(excluded),
+		HWorklist: nonNilW(work),
 		HRequired: nonNilW(required), HDeferred: nonNilW(deferred), HUnmatched: unmatchedAll,
 		HUnmatchedChanges: changes, ChangeBaseline: since, Instructions: instr,
 	}, nil
