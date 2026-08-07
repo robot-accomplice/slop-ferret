@@ -198,6 +198,17 @@ call graph; the other two consume it rather than re-deriving it.
                  └──────────────┘   └──────────────┘
 ```
 
+**Viewing the sweep in Architext.** After running `ferret enumerate`, point Architext at the sweep
+artifacts:
+
+```bash
+architext slop-ferret . --plan plan.json --discharge discharge.json --findings findings.json
+architext serve .
+```
+
+Architext writes `docs/architext/data/slop-ferret.json` and renders the sweep coverage and findings
+as a "Slop Ferret" mode alongside the architecture data and Magma code graph.
+
 **The contracts are the seam and they are not interchangeable:** `codemap-rows/1` (row files, the
 only one this accepts), `codemap-graph/1` (`graph.json`), `magma-code-graph/1` (the architext
 emit). `plan` refuses a map whose `contract_version` it does not know, and refuses a map of a
