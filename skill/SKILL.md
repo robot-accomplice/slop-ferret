@@ -184,15 +184,30 @@ its maintainer 2026-08-01:
   magma's version, so an unchanged repo reports "already fresh" and writes nothing — silently
   producing a stale map from a magma you just fixed. `generator` in the envelope names the build
   that wrote a map; check it rather than the run's exit code.
-- **Never gate on a dirty tree.** magma stamps the marker in **`tree`** (`<sha>-dirty`) and leaves
-  `sha` as the clean head sha. `ferret plan` refuses when `tree` disagrees with `sha`. Until
-  2026-08-02 this file claimed the marker was in `sha` as `<sha>+<diffhash>` and that the gate
-  therefore "refuses by construction" — the gate compared `sha`, the comparison passed, and a dirty
-  map was accepted with exit 0. The guarantee was prose for its whole life, and it was found by
-  sweeping magma rather than by any test here. A dirty map reports in-flight, not-yet-wired code as
-  dead, and its boundary is *disproportionately* likely to evaporate because in-flight commits get
-  amended or rebased away: two earlier roboticus sweeps pinned dirty-map boundaries and neither
-  resolves today.
+- **Never gate on a dirty tree.** Since magma PR #36 (2026-08-05) magma stamps a **full 40-char
+  `sha`**, and on a dirty tree `sha` becomes **`<sha>+<diffhash>`** while `tree` stays
+  `<sha>-dirty`. `ferret plan` refuses when `tree` disagrees with `sha`, which catches both shapes.
+  **Verified by running it, not by reading it**: a clean map with a full-sha pin is accepted, and a
+  composite-sha map is refused naming both values.
+
+  Read the next sentence carefully, because this string has a history. Until 2026-08-02 this file
+  claimed the marker was in `sha` as `<sha>+<diffhash>` and that the gate therefore "refuses by
+  construction" — it did not: the gate compared `sha`, the comparison passed, and a dirty map was
+  accepted with exit 0. That claim was **false when it was made**. magma has since implemented that
+  exact form for independent reasons, so the description is true again — but it is true because
+  magma changed, not because the old claim was right. Do not treat the resemblance as vindication.
+
+  A dirty map reports in-flight, not-yet-wired code as dead, and its boundary is
+  *disproportionately* likely to evaporate because in-flight commits get amended or rebased away:
+  two earlier roboticus sweeps pinned dirty-map boundaries and neither resolves today.
+
+- **Rebuild `ferret` before trusting a refusal.** On 2026-08-05 a sweep reported that `ferret plan`
+  rejected a full-length sha against an abbreviated map. That was real, and it had been fixed in
+  source 18 hours earlier (`35c2bd0`, 2026-08-03 10:25) — the installed binary was built
+  2026-08-02 16:52. The tool hit the failure this file already warns about two sections down: *"a
+  stale local install is indistinguishable from a hallucinated package."* Knowing the rule did not
+  help, because nobody applied it to `ferret` itself. `go install ./cmd/ferret` from a current
+  checkout, and check `ferret --version` against the repo before filing a tool bug.
 - **Three contract strings, not interchangeable.** `codemap-rows/1` (row files — the only one this
   gate may accept), `codemap-graph/1` (`graph.json`), `magma-code-graph/1` (the architext emit).
 
